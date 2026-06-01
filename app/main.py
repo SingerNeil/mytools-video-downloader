@@ -1,0 +1,78 @@
+from __future__ import annotations
+
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
+
+from .downloader import DEFAULT_OUTPUT_DIR, DownloadError, download_url, ffmpeg_available, probe_url
+from .jobs import jobs
+
+
+ROOT_DIR = Path(__file__).resolve().parent.parent
+STATIC_DIR = ROOT_DIR / "static"
+
+app = FastAPI(title="MyTools Video Downloader")
+executor = ThreadPoolExecutor(max_workers=2)
+
+
+class ProbeRequest(BaseModel):
+    url: str = Field(min_length=1)
+    cookie_source: str = "none"
+
+
+class DownloadRequest(BaseModel):
+    url: str = Field(min_length=1)
+    cookie_source: str = "none"
+    quality: str = "best"
+    output_dir: str | None = None
+
+
+@app.get("/")
+def index() -> FileResponse:
+    return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/api/health")
+def health() -> dict[str, object]:
+    return {
+        "ok": True,
+        "ffmpeg_available": ffmpeg_available(),
+        "default_output_dir": str(DEFAULT_OUTPUT_DIR),
+    }
+
+
+@app.post("/api/probe")
+def probe(request: ProbeRequest) -> dict[str, object]:
+    try:
+        return probe_url(request.url, request.cookie_source)
+    except DownloadError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/download")
+def download(request: DownloadRequest) -> dict[str, object]:
+    job = jobs.create(request.url)
+    executor.submit(
+        download_url,
+        job_id=job.id,
+        url=request.url,
+        cookie_source=request.cookie_source,
+        quality=request.quality,
+        output_dir=request.output_dir,
+    )
+    return job.snapshot()
+
+
+@app.get("/api/jobs/{job_id}")
+def job_status(job_id: str) -> dict[str, object]:
+    job = jobs.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job.snapshot()
+
+
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")

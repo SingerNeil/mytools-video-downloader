@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MyTools 视频下载工具</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="panel">
+        <div class="heading">
+          <div>
+            <p class="eyebrow">MyTools</p>
+            <h1>视频下载工具</h1>
+          </div>
+          <div id="envBadge" class="badge">检查中</div>
+        </div>
+
+        <label class="field">
+          <span>视频链接</span>
+          <input id="urlInput" type="url" placeholder="https://www.youtube.com/watch?v=..." autocomplete="off" />
+        </label>
+
+        <div class="grid">
+          <label class="field">
+            <span>登录状态</span>
+            <select id="cookieSource">
+              <option value="none">不使用登录状态</option>
+              <option value="chrome">读取 Chrome 登录状态</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>下载质量</span>
+            <select id="quality">
+              <option value="best">最佳 Mac 兼容 MP4</option>
+            </select>
+          </label>
+        </div>
+
+        <label class="field">
+          <span>保存位置</span>
+          <input id="outputDir" type="text" />
+        </label>
+
+        <div class="actions">
+          <button id="probeBtn" type="button">检测链接</button>
+          <button id="downloadBtn" type="button" class="primary">开始下载</button>
+        </div>
+      </section>
+
+      <section class="panel result">
+        <div class="result-head">
+          <h2>状态</h2>
+          <span id="jobState" class="state">空闲</span>
+        </div>
+
+        <div class="progress">
+          <div id="progressBar"></div>
+        </div>
+
+        <dl id="details" class="details">
+          <div>
+            <dt>提示</dt>
+            <dd id="message">粘贴视频链接后，可以先检测链接，也可以直接开始下载。</dd>
+          </div>
+          <div>
+            <dt>标题</dt>
+            <dd id="title">-</dd>
+          </div>
+          <div>
+            <dt>保存文件</dt>
+            <dd id="savedFile">-</dd>
+          </div>
+        </dl>
+
+        <pre id="log" class="log"></pre>
+      </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
