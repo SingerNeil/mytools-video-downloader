@@ -211,6 +211,11 @@ def ydl_options(cookie_source: str, download_scope: str = "single", *, quiet: bo
         "no_warnings": quiet,
         "noplaylist": download_scope == "single",
         "ignoreerrors": False,
+        "retries": 10,
+        "fragment_retries": 10,
+        "extractor_retries": 5,
+        "file_access_retries": 5,
+        "socket_timeout": 30,
     }
     if cookie_source == "chrome":
         opts["cookiesfrombrowser"] = ("chrome",)
@@ -239,11 +244,8 @@ def probe_url(
         raise DownloadError("没有解析到视频信息。")
 
     formats = info.get("formats") or []
-    entries = info.get("entries") or []
-    try:
-        entry_count = len(entries)
-    except TypeError:
-        entry_count = 0
+    entries = list(info.get("entries") or [])
+    entry_count = len(entries)
     return {
         "title": info.get("title"),
         "extractor": info.get("extractor"),
@@ -275,46 +277,74 @@ def download_url(
 
         jobs.update(job_id, status="running", message="Preparing download")
 
+        progress_context = {"index": 0, "total": 1}
+
         def progress_hook(data: dict[str, Any]) -> None:
             status = data.get("status")
             if status == "downloading":
                 total = data.get("total_bytes") or data.get("total_bytes_estimate")
                 downloaded = data.get("downloaded_bytes")
-                progress = 0.0
+                item_progress = 0.0
                 if total and downloaded:
-                    progress = max(0.0, min(100.0, downloaded / total * 100.0))
+                    item_progress = max(0.0, min(100.0, downloaded / total * 100.0))
+                if progress_context["total"] > 1:
+                    progress = (
+                        (progress_context["index"] - 1 + item_progress / 100.0)
+                        / progress_context["total"]
+                        * 99.0
+                    )
+                    status_message = f"正在下载第 {progress_context['index']}/{progress_context['total']} 个视频"
+                else:
+                    progress = item_progress
+                    status_message = "Downloading"
                 jobs.update(
                     job_id,
                     status="running",
                     progress=progress,
-                    message="Downloading",
+                    message=status_message,
                     downloaded_bytes=downloaded,
                     total_bytes=total,
                     speed=data.get("speed"),
                     eta=data.get("eta"),
                 )
             elif status == "finished":
+                if progress_context["total"] > 1:
+                    progress = progress_context["index"] / progress_context["total"] * 99.0
+                else:
+                    progress = 99.0
                 jobs.update(
                     job_id,
                     status="running",
-                    progress=99.0,
+                    progress=progress,
                     message="Merging and finalizing",
                     output_path=data.get("filename"),
                 )
 
         selected_format = format_for_quality(quality)
-        options = ydl_options(cookie_source, download_scope)
+        entry_urls: list[str] = []
+        playlist_info: dict[str, Any] | None = None
         if download_scope == "collection":
             probe_options = ydl_options(cookie_source, download_scope)
             probe_options["skip_download"] = True
             with yt_dlp.YoutubeDL(probe_options) as ydl:
                 playlist_info = ydl.extract_info(url, download=False)
             destination = collection_output_dir(base_destination, playlist_info.get("title") if playlist_info else None)
+            entries = list(playlist_info.get("entries") or []) if playlist_info else []
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    continue
+                entry_url = entry.get("webpage_url") or entry.get("original_url") or entry.get("url")
+                if isinstance(entry_url, str) and urlparse(entry_url).scheme in {"http", "https"}:
+                    entry_urls.append(entry_url)
         else:
             destination = base_destination
 
+        if len(entry_urls) <= 1:
+            entry_urls = []
+
         destination.mkdir(parents=True, exist_ok=True)
         started_at = time.time()
+        options = ydl_options(cookie_source, "single" if entry_urls else download_scope)
         options.update(
             {
                 "format": selected_format,
@@ -326,24 +356,49 @@ def download_url(
             }
         )
 
+        info: dict[str, Any] | None = playlist_info
+        output_path = None
         with yt_dlp.YoutubeDL(options) as ydl:
-            info = ydl.extract_info(url, download=True)
-            output_path = None
-            if info:
+            if entry_urls:
+                progress_context["total"] = len(entry_urls)
+                for index, entry_url in enumerate(entry_urls, start=1):
+                    progress_context["index"] = index
+                    jobs.update(
+                        job_id,
+                        status="running",
+                        message=f"正在下载第 {index}/{len(entry_urls)} 个视频",
+                    )
+                    for attempt in range(1, 4):
+                        try:
+                            ydl.extract_info(entry_url, download=True)
+                            break
+                        except Exception:
+                            if attempt == 3:
+                                raise
+                            jobs.update(
+                                job_id,
+                                status="running",
+                                message=f"第 {index}/{len(entry_urls)} 个视频连接中断，正在第 {attempt + 1} 次尝试",
+                            )
+                            time.sleep(attempt * 2)
+                output_path = str(destination)
+            else:
+                info = ydl.extract_info(url, download=True)
                 output_path = ydl.prepare_filename(info)
                 if options.get("merge_output_format"):
                     output_path = str(Path(output_path).with_suffix(".mp4"))
 
+        include_existing_collection_files = download_scope == "collection" and bool(entry_urls)
         final_paths = sorted(
             path
             for path in destination.glob("*.mp4")
-            if path.is_file() and path.stat().st_mtime >= started_at - 1
+            if path.is_file() and (include_existing_collection_files or path.stat().st_mtime >= started_at - 1)
         )
-        if output_path and Path(output_path).exists() and Path(output_path) not in final_paths:
+        if output_path and Path(output_path).is_file() and Path(output_path) not in final_paths:
             final_paths.append(Path(output_path))
 
         if final_paths:
-            output_path = str(final_paths[0]) if len(final_paths) == 1 else str(destination)
+            output_path = str(destination) if download_scope == "collection" else str(final_paths[0])
 
         for final_path in final_paths:
             if not is_mac_playable_mp4(final_path):

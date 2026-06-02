@@ -1,71 +1,71 @@
-# MyTools Video Downloader
+# MyTools 视频下载工具
 
-A local web tool for downloading a single video from supported sites such as YouTube, Bilibili, and XiaoHongShu through `yt-dlp`.
+一个本地网页工具，用 `yt-dlp` 下载 YouTube、哔哩哔哩、小红书等站点的视频。默认下载单个视频，也可以手动选择下载整个合集/列表。
 
-## Requirements
+## 环境要求
 
-- macOS on Apple Silicon or Intel
-- Python 3.10+; Homebrew Python 3.12 is recommended on this Mac
+- macOS，Apple Silicon 或 Intel 都可以
+- Python 3.10+，这台 Mac 推荐使用 Homebrew Python 3.12
 - Homebrew
-- `ffmpeg` for merging best video and audio streams
+- `ffmpeg`，用于合并视频和音频
 
-Install `ffmpeg` if the app reports it is missing:
+如果页面提示缺少 `ffmpeg`，先安装：
 
 ```bash
 brew install ffmpeg
 ```
 
-## Start
+## 启动
 
 ```bash
 cd /Users/ming/codes/My_Tools/video_downloader
 ./run.sh
 ```
 
-`run.sh` prefers `python3.12` when it is available. You can override it:
+`run.sh` 会优先使用 `python3.12`。如果要指定 Python，可以这样启动：
 
 ```bash
 PYTHON_BIN=/opt/homebrew/bin/python3 ./run.sh
 ```
 
-Open:
+打开浏览器访问：
 
 ```text
 http://127.0.0.1:8765
 ```
 
-## Use
+## 使用
 
-1. Paste a video URL.
-2. Choose cookie mode:
-   - `No cookies` for public videos.
-   - `Chrome cookies` for videos you can access after logging in through Chrome.
-3. Choose download scope:
-   - `仅下载当前视频` downloads only the video pointed to by the pasted URL.
-   - `下载整个合集/列表` allows yt-dlp to download the whole playlist, collection, or multi-part video when the URL supports it.
-4. Choose quality:
-   - `最高可用画质` picks the highest Mac-compatible MP4 stream available.
-   - `优先 60 帧` tries high-frame-rate video first when the platform/account provides it.
-   - `1080P`, `720P`, `480P`, and `360P` cap the selected video height.
-5. Keep the default save folder or enter another local path.
-6. Click `Probe` to check the link.
-7. Click `Download`.
+1. 粘贴视频链接。
+2. 选择登录状态：
+   - `不使用登录状态`：适合公开视频。
+   - `读取 Chrome 登录状态`：适合你已经在 Chrome 登录后才能看的视频。
+3. 选择下载范围：
+   - `仅下载当前视频`：只下载你输入链接指向的这个视频。
+   - `下载整个合集/列表`：下载该链接所属的合集、列表或 B 站多 P 视频。
+4. 选择清晰度：
+   - `最高可用画质`：选择当前账号能拿到的最高可用 MP4。
+   - `优先 60 帧`：平台和账号支持时优先下载高帧率版本。
+   - `1080P`、`720P`、`480P`、`360P`：限制最高视频高度。
+5. 保持默认保存目录，或者输入你自己的本地目录。这个目录会被记住，下次重启工具后仍然使用。
+6. 点击 `检测链接` 检查链接。
+7. 点击 `开始下载`。
 
-The default save folder is:
+默认保存目录是：
 
 ```text
 ~/Downloads/MyToolsVideos
 ```
 
-## Notes
+## 说明
 
-- Single-video download remains the default to avoid accidentally downloading an entire playlist.
-- Collection/list downloads are now available from the download scope selector. Keep `仅下载当前视频` selected when you do not want the whole playlist.
-- Collection/list downloads are saved into a new subfolder named after the collection title inside the selected save folder.
-- Quality selection is available from the quality selector. Member-only resolutions still require Chrome cookie mode and an account that can watch that quality in the browser.
-- It does not store usernames or passwords.
-- Downloads prefer H.264/AAC MP4 for Mac playback. If a platform only provides AV1/VP9 or another codec that macOS may play as audio-only, the app automatically converts the file to a Mac-compatible H.264 MP4.
-- Some platforms change frequently. If downloads stop working, update `yt-dlp`:
+- 默认仍然是单视频下载，避免误把整个播放列表都下载下来。
+- 合集/列表下载会在你选择的保存目录下新建一个以合集标题命名的子文件夹，所有分集都放进这个子文件夹。
+- 页面里修改保存目录后，会写入本地 `user_settings.json`。这个文件已加入 `.gitignore`，不会上传到 GitHub。
+- 会员清晰度仍然取决于你的账号权限。需要先在 Chrome 里登录对应网站，再选择 `读取 Chrome 登录状态`。
+- 工具不会保存用户名或密码。
+- 下载优先选择 Mac 兼容的 H.264/AAC MP4。如果平台只给 AV1/VP9 等 Mac 可能只播声音的格式，工具会自动转成 Mac 可播放的 H.264 MP4。
+- 部分平台页面变化很频繁。如果突然不能下载，优先更新 `yt-dlp`：
 
 ```bash
 cd /Users/ming/codes/My_Tools/video_downloader
@@ -73,4 +73,4 @@ cd /Users/ming/codes/My_Tools/video_downloader
 python -m pip install --upgrade yt-dlp
 ```
 
-- DRM-protected, expired, private, or unsupported videos may not download.
+- DRM 保护、已过期、私密或暂不支持的链接可能无法下载。

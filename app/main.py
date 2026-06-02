@@ -9,8 +9,9 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from .downloader import DEFAULT_OUTPUT_DIR, DownloadError, download_url, ffmpeg_available, probe_url
+from .downloader import DownloadError, download_url, ffmpeg_available, probe_url
 from .jobs import jobs
+from .settings import load_settings, save_settings
 
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -46,6 +47,10 @@ class DownloadRequest(BaseModel):
     output_dir: str | None = None
 
 
+class SettingsRequest(BaseModel):
+    output_dir: str | None = None
+
+
 @app.get("/")
 def index() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
@@ -53,11 +58,17 @@ def index() -> FileResponse:
 
 @app.get("/api/health")
 def health() -> dict[str, object]:
+    settings = load_settings()
     return {
         "ok": True,
         "ffmpeg_available": ffmpeg_available(),
-        "default_output_dir": str(DEFAULT_OUTPUT_DIR),
+        "default_output_dir": settings["output_dir"],
     }
+
+
+@app.post("/api/settings")
+def update_settings(request: SettingsRequest) -> dict[str, str]:
+    return save_settings(request.output_dir)
 
 
 @app.post("/api/probe")
@@ -70,6 +81,7 @@ def probe(request: ProbeRequest) -> dict[str, object]:
 
 @app.post("/api/download")
 def download(request: DownloadRequest) -> dict[str, object]:
+    settings = save_settings(request.output_dir) if request.output_dir and request.output_dir.strip() else load_settings()
     job = jobs.create(request.url)
     executor.submit(
         download_url,
@@ -78,7 +90,7 @@ def download(request: DownloadRequest) -> dict[str, object]:
         cookie_source=request.cookie_source,
         download_scope=request.download_scope,
         quality=request.quality,
-        output_dir=request.output_dir,
+        output_dir=settings["output_dir"],
     )
     return job.snapshot()
 

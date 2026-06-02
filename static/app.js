@@ -14,6 +14,7 @@ const savedFile = document.querySelector("#savedFile");
 const log = document.querySelector("#log");
 
 let pollTimer = null;
+let saveOutputDirTimer = null;
 
 const stateLabels = {
   queued: "排队中",
@@ -67,6 +68,18 @@ async function api(path, body) {
     throw new Error(data.detail || "请求失败");
   }
   return data;
+}
+
+async function saveOutputDir(silent = false) {
+  const value = outputDir.value.trim();
+  if (!value) {
+    return;
+  }
+  const data = await api("/api/settings", { output_dir: value });
+  outputDir.value = data.output_dir || value;
+  if (!silent) {
+    writeLog(`保存位置已记住：${outputDir.value}`);
+  }
 }
 
 function requestPayload() {
@@ -134,6 +147,7 @@ async function startDownload() {
   updateProgress(0);
   savedFile.textContent = "-";
   try {
+    await saveOutputDir(true);
     const job = await api("/api/download", payload);
     writeLog(`下载任务已创建：${job.id}`);
     pollJob(job.id);
@@ -191,6 +205,15 @@ async function pollJob(jobId) {
 
 probeBtn.addEventListener("click", probe);
 downloadBtn.addEventListener("click", startDownload);
+outputDir.addEventListener("change", () => {
+  saveOutputDir().catch((error) => writeLog(`保存位置失败：${error.message}`));
+});
+outputDir.addEventListener("input", () => {
+  window.clearTimeout(saveOutputDirTimer);
+  saveOutputDirTimer = window.setTimeout(() => {
+    saveOutputDir(true).catch((error) => writeLog(`保存位置失败：${error.message}`));
+  }, 800);
+});
 loadHealth().catch((error) => {
   envBadge.textContent = "服务异常";
   envBadge.className = "badge warn";
