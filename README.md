@@ -61,6 +61,7 @@ The default save folder is:
 
 - Single-video download remains the default to avoid accidentally downloading an entire playlist.
 - Collection/list downloads are now available from the download scope selector. Keep `仅下载当前视频` selected when you do not want the whole playlist.
+- Collection/list downloads are saved into a new subfolder named after the collection title inside the selected save folder.
 - Quality selection is available from the quality selector. Member-only resolutions still require Chrome cookie mode and an account that can watch that quality in the browser.
 - It does not store usernames or passwords.
 - Downloads prefer H.264/AAC MP4 for Mac playback. If a platform only provides AV1/VP9 or another codec that macOS may play as audio-only, the app automatically converts the file to a Mac-compatible H.264 MP4.

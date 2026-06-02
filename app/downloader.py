@@ -17,6 +17,7 @@ DEFAULT_OUTPUT_DIR = Path.home() / "Downloads" / "MyToolsVideos"
 SUPPORTED_COOKIE_SOURCES = {"none", "chrome"}
 SUPPORTED_DOWNLOAD_SCOPES = {"single", "collection"}
 SUPPORTED_QUALITIES = {"best", "60fps", "1080p", "720p", "480p", "360p"}
+RESERVED_MAC_FILENAMES = {".", ".."}
 
 
 def mac_compatible_format(height: int | None = None, prefer_60fps: bool = False) -> str:
@@ -46,6 +47,15 @@ class DownloadError(RuntimeError):
 
 def ffmpeg_available() -> bool:
     return shutil.which("ffmpeg") is not None
+
+
+def safe_path_name(value: str | None, fallback: str = "未命名合集") -> str:
+    name = (value or fallback).strip()
+    name = re.sub(r'[\\/:*?"<>|\r\n\t]+', " ", name)
+    name = re.sub(r"\s+", " ", name).strip(" .")
+    if not name or name in RESERVED_MAC_FILENAMES:
+        name = fallback
+    return name[:120].rstrip(" .") or fallback
 
 
 def normalize_cookie_source(cookie_source: str | None) -> str:
@@ -102,6 +112,10 @@ def safe_output_dir(output_dir: str | None) -> Path:
     if not output_dir or not output_dir.strip():
         return DEFAULT_OUTPUT_DIR
     return Path(output_dir).expanduser()
+
+
+def collection_output_dir(base_dir: Path, title: str | None) -> Path:
+    return base_dir / safe_path_name(title)
 
 
 def readable_error(exc: BaseException) -> str:
@@ -257,9 +271,7 @@ def download_url(
         cookie_source = normalize_cookie_source(cookie_source)
         download_scope = normalize_download_scope(download_scope)
         url = normalize_url_for_scope(url, download_scope)
-        destination = safe_output_dir(output_dir)
-        destination.mkdir(parents=True, exist_ok=True)
-        started_at = time.time()
+        base_destination = safe_output_dir(output_dir)
 
         jobs.update(job_id, status="running", message="Preparing download")
 
@@ -292,6 +304,17 @@ def download_url(
 
         selected_format = format_for_quality(quality)
         options = ydl_options(cookie_source, download_scope)
+        if download_scope == "collection":
+            probe_options = ydl_options(cookie_source, download_scope)
+            probe_options["skip_download"] = True
+            with yt_dlp.YoutubeDL(probe_options) as ydl:
+                playlist_info = ydl.extract_info(url, download=False)
+            destination = collection_output_dir(base_destination, playlist_info.get("title") if playlist_info else None)
+        else:
+            destination = base_destination
+
+        destination.mkdir(parents=True, exist_ok=True)
+        started_at = time.time()
         options.update(
             {
                 "format": selected_format,
