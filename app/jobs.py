@@ -22,6 +22,7 @@ class DownloadJob:
     updated_at: str
     title: str | None = None
     output_path: str | None = None
+    output_paths: list[str] | None = None
     error: str | None = None
     downloaded_bytes: int | None = None
     total_bytes: int | None = None

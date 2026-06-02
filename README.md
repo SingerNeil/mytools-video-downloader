@@ -40,9 +40,16 @@ http://127.0.0.1:8765
 2. Choose cookie mode:
    - `No cookies` for public videos.
    - `Chrome cookies` for videos you can access after logging in through Chrome.
-3. Keep the default save folder or enter another local path.
-4. Click `Probe` to check the link.
-5. Click `Download`.
+3. Choose download scope:
+   - `仅下载当前视频` downloads only the video pointed to by the pasted URL.
+   - `下载整个合集/列表` allows yt-dlp to download the whole playlist, collection, or multi-part video when the URL supports it.
+4. Choose quality:
+   - `最高可用画质` picks the highest Mac-compatible MP4 stream available.
+   - `优先 60 帧` tries high-frame-rate video first when the platform/account provides it.
+   - `1080P`, `720P`, `480P`, and `360P` cap the selected video height.
+5. Keep the default save folder or enter another local path.
+6. Click `Probe` to check the link.
+7. Click `Download`.
 
 The default save folder is:
 
@@ -52,7 +59,9 @@ The default save folder is:
 
 ## Notes
 
-- This first version is intentionally single-video only.
+- Single-video download remains the default to avoid accidentally downloading an entire playlist.
+- Collection/list downloads are now available from the download scope selector. Keep `仅下载当前视频` selected when you do not want the whole playlist.
+- Quality selection is available from the quality selector. Member-only resolutions still require Chrome cookie mode and an account that can watch that quality in the browser.
 - It does not store usernames or passwords.
 - Downloads prefer H.264/AAC MP4 for Mac playback. If a platform only provides AV1/VP9 or another codec that macOS may play as audio-only, the app automatically converts the file to a Mac-compatible H.264 MP4.
 - Some platforms change frequently. If downloads stop working, update `yt-dlp`:

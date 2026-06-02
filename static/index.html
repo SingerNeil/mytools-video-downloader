@@ -32,9 +32,24 @@
           </label>
 
           <label class="field">
+            <span>下载范围</span>
+            <select id="downloadScope">
+              <option value="single">仅下载当前视频</option>
+              <option value="collection">下载整个合集/列表</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="grid">
+          <label class="field">
             <span>下载质量</span>
             <select id="quality">
-              <option value="best">最佳 Mac 兼容 MP4</option>
+              <option value="best">最高可用画质</option>
+              <option value="60fps">优先 60 帧</option>
+              <option value="1080p">1080P</option>
+              <option value="720p">720P</option>
+              <option value="480p">480P</option>
+              <option value="360p">360P</option>
             </select>
           </label>
         </div>

@@ -22,11 +22,13 @@ executor = ThreadPoolExecutor(max_workers=2)
 class ProbeRequest(BaseModel):
     url: str = Field(min_length=1)
     cookie_source: str = "none"
+    download_scope: str = "single"
 
 
 class DownloadRequest(BaseModel):
     url: str = Field(min_length=1)
     cookie_source: str = "none"
+    download_scope: str = "single"
     quality: str = "best"
     output_dir: str | None = None
 
@@ -48,7 +50,7 @@ def health() -> dict[str, object]:
 @app.post("/api/probe")
 def probe(request: ProbeRequest) -> dict[str, object]:
     try:
-        return probe_url(request.url, request.cookie_source)
+        return probe_url(request.url, request.cookie_source, request.download_scope)
     except DownloadError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -61,6 +63,7 @@ def download(request: DownloadRequest) -> dict[str, object]:
         job_id=job.id,
         url=request.url,
         cookie_source=request.cookie_source,
+        download_scope=request.download_scope,
         quality=request.quality,
         output_dir=request.output_dir,
     )

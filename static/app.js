@@ -1,5 +1,6 @@
 const urlInput = document.querySelector("#urlInput");
 const cookieSource = document.querySelector("#cookieSource");
+const downloadScope = document.querySelector("#downloadScope");
 const quality = document.querySelector("#quality");
 const outputDir = document.querySelector("#outputDir");
 const probeBtn = document.querySelector("#probeBtn");
@@ -72,6 +73,7 @@ function requestPayload() {
   return {
     url: urlInput.value.trim(),
     cookie_source: cookieSource.value,
+    download_scope: downloadScope.value,
     quality: quality.value,
     output_dir: outputDir.value.trim(),
   };
@@ -105,7 +107,8 @@ async function probe() {
     const data = await api("/api/probe", payload);
     title.textContent = data.title || "-";
     savedFile.textContent = "-";
-    message.textContent = `检测成功：${data.extractor || "解析器"} 找到 ${data.format_count || 0} 个可用格式。`;
+    const scopeText = data.download_scope === "collection" ? `，合集/列表内检测到 ${data.entry_count || 0} 个条目` : "";
+    message.textContent = `检测成功：${data.extractor || "解析器"} 找到 ${data.format_count || 0} 个可用格式${scopeText}。`;
     writeLog(`检测成功：${data.title || data.webpage_url}`);
     if (!data.ffmpeg_available) {
       writeLog("缺少 ffmpeg，请运行：brew install ffmpeg");
@@ -158,10 +161,15 @@ async function pollJob(jobId) {
     updateProgress(job.progress);
     message.textContent = job.error || messageLabels[job.message] || stateLabels[job.status] || job.message || job.status;
     title.textContent = job.title || title.textContent || "-";
-    savedFile.textContent = job.output_path || "-";
+    if (Array.isArray(job.output_paths) && job.output_paths.length > 1) {
+      savedFile.textContent = job.output_paths.join("\n");
+    } else {
+      savedFile.textContent = job.output_path || "-";
+    }
 
     if (job.status === "completed") {
-      writeLog(`下载完成：${job.output_path || "文件已保存"}`);
+      const countText = Array.isArray(job.output_paths) && job.output_paths.length > 1 ? `，共 ${job.output_paths.length} 个文件` : "";
+      writeLog(`下载完成${countText}：${job.output_path || "文件已保存"}`);
       setBusy(false);
       return;
     }

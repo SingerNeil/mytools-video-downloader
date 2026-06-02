@@ -3,9 +3,10 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
+import time
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import yt_dlp
 
@@ -14,14 +15,29 @@ from .jobs import jobs
 
 DEFAULT_OUTPUT_DIR = Path.home() / "Downloads" / "MyToolsVideos"
 SUPPORTED_COOKIE_SOURCES = {"none", "chrome"}
-MAC_COMPATIBLE_FORMAT = (
-    "bv*[vcodec^=avc1]+ba[acodec^=mp4a]/"
-    "bv*[vcodec^=avc1]+ba/"
-    "b[vcodec^=avc1][acodec^=mp4a]/"
-    "b[vcodec^=avc1]/"
-    "bv*[vcodec!*=av01][vcodec!*=vp9]+ba/"
-    "b"
-)
+SUPPORTED_DOWNLOAD_SCOPES = {"single", "collection"}
+SUPPORTED_QUALITIES = {"best", "60fps", "1080p", "720p", "480p", "360p"}
+
+
+def mac_compatible_format(height: int | None = None, prefer_60fps: bool = False) -> str:
+    height_filter = f"[height<={height}]" if height else ""
+    fps_filter = "[fps>=50]" if prefer_60fps else ""
+    relaxed_fps_filter = "[fps<=60]" if prefer_60fps else ""
+
+    return (
+        f"bv*{height_filter}{fps_filter}[vcodec^=avc1]+ba[acodec^=mp4a]/"
+        f"bv*{height_filter}{fps_filter}[vcodec^=avc1]+ba/"
+        f"bv*{height_filter}{fps_filter}[vcodec^=avc1]/"
+        f"bv*{height_filter}{relaxed_fps_filter}[vcodec^=avc1]+ba[acodec^=mp4a]/"
+        f"bv*{height_filter}{relaxed_fps_filter}[vcodec^=avc1]+ba/"
+        f"b{height_filter}[vcodec^=avc1][acodec^=mp4a]/"
+        f"b{height_filter}[vcodec^=avc1]/"
+        f"bv*{height_filter}[vcodec!*=av01][vcodec!*=vp9]+ba/"
+        f"b{height_filter}/"
+        "bv*[vcodec^=avc1]+ba[acodec^=mp4a]/"
+        "bv*[vcodec^=avc1]+ba/"
+        "b"
+    )
 
 
 class DownloadError(RuntimeError):
@@ -39,12 +55,47 @@ def normalize_cookie_source(cookie_source: str | None) -> str:
     return source
 
 
+def normalize_download_scope(download_scope: str | None) -> str:
+    scope = download_scope or "single"
+    if scope not in SUPPORTED_DOWNLOAD_SCOPES:
+        raise DownloadError("不支持这个下载范围，请选择“仅下载当前视频”或“下载整个合集/列表”。")
+    return scope
+
+
+def normalize_quality(quality: str | None) -> str:
+    selected = quality or "best"
+    if selected not in SUPPORTED_QUALITIES:
+        raise DownloadError("不支持这个清晰度选项。")
+    return selected
+
+
+def format_for_quality(quality: str | None) -> str:
+    selected = normalize_quality(quality)
+    if selected == "60fps":
+        return mac_compatible_format(prefer_60fps=True)
+    if selected.endswith("p"):
+        return mac_compatible_format(int(selected.removesuffix("p")))
+    return mac_compatible_format()
+
+
 def validate_url(url: str) -> str:
     value = url.strip()
     parsed = urlparse(value)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         raise DownloadError("请输入有效的 http 或 https 视频链接。")
     return value
+
+
+def normalize_url_for_scope(url: str, download_scope: str) -> str:
+    if download_scope != "collection":
+        return url
+
+    parsed = urlparse(url)
+    if "bilibili.com" not in parsed.netloc or not re.search(r"/video/(BV|av)", parsed.path, re.IGNORECASE):
+        return url
+
+    query = [(key, value) for key, value in parse_qsl(parsed.query, keep_blank_values=True) if key.lower() != "p"]
+    return urlunparse(parsed._replace(query=urlencode(query, doseq=True)))
 
 
 def safe_output_dir(output_dir: str | None) -> Path:
@@ -140,11 +191,11 @@ def transcode_for_mac(path: Path) -> None:
         raise DownloadError(readable_error(exc)) from exc
 
 
-def ydl_options(cookie_source: str, *, quiet: bool = True) -> dict[str, Any]:
+def ydl_options(cookie_source: str, download_scope: str = "single", *, quiet: bool = True) -> dict[str, Any]:
     opts: dict[str, Any] = {
         "quiet": quiet,
         "no_warnings": quiet,
-        "noplaylist": True,
+        "noplaylist": download_scope == "single",
         "ignoreerrors": False,
     }
     if cookie_source == "chrome":
@@ -152,10 +203,16 @@ def ydl_options(cookie_source: str, *, quiet: bool = True) -> dict[str, Any]:
     return opts
 
 
-def probe_url(url: str, cookie_source: str | None = None) -> dict[str, Any]:
+def probe_url(
+    url: str,
+    cookie_source: str | None = None,
+    download_scope: str | None = None,
+) -> dict[str, Any]:
     url = validate_url(url)
     cookie_source = normalize_cookie_source(cookie_source)
-    options = ydl_options(cookie_source)
+    download_scope = normalize_download_scope(download_scope)
+    url = normalize_url_for_scope(url, download_scope)
+    options = ydl_options(cookie_source, download_scope)
     options["skip_download"] = True
 
     try:
@@ -168,6 +225,11 @@ def probe_url(url: str, cookie_source: str | None = None) -> dict[str, Any]:
         raise DownloadError("没有解析到视频信息。")
 
     formats = info.get("formats") or []
+    entries = info.get("entries") or []
+    try:
+        entry_count = len(entries)
+    except TypeError:
+        entry_count = 0
     return {
         "title": info.get("title"),
         "extractor": info.get("extractor"),
@@ -175,6 +237,8 @@ def probe_url(url: str, cookie_source: str | None = None) -> dict[str, Any]:
         "duration": info.get("duration"),
         "uploader": info.get("uploader") or info.get("channel"),
         "format_count": len(formats),
+        "entry_count": entry_count,
+        "download_scope": download_scope,
         "ffmpeg_available": ffmpeg_available(),
     }
 
@@ -184,14 +248,18 @@ def download_url(
     job_id: str,
     url: str,
     cookie_source: str | None,
+    download_scope: str | None,
     quality: str | None,
     output_dir: str | None,
 ) -> None:
     try:
         url = validate_url(url)
         cookie_source = normalize_cookie_source(cookie_source)
+        download_scope = normalize_download_scope(download_scope)
+        url = normalize_url_for_scope(url, download_scope)
         destination = safe_output_dir(output_dir)
         destination.mkdir(parents=True, exist_ok=True)
+        started_at = time.time()
 
         jobs.update(job_id, status="running", message="Preparing download")
 
@@ -222,8 +290,8 @@ def download_url(
                     output_path=data.get("filename"),
                 )
 
-        selected_format = MAC_COMPATIBLE_FORMAT if (quality or "best") == "best" else MAC_COMPATIBLE_FORMAT
-        options = ydl_options(cookie_source)
+        selected_format = format_for_quality(quality)
+        options = ydl_options(cookie_source, download_scope)
         options.update(
             {
                 "format": selected_format,
@@ -243,9 +311,19 @@ def download_url(
                 if options.get("merge_output_format"):
                     output_path = str(Path(output_path).with_suffix(".mp4"))
 
-        if output_path:
-            final_path = Path(output_path)
-            if final_path.exists() and not is_mac_playable_mp4(final_path):
+        final_paths = sorted(
+            path
+            for path in destination.glob("*.mp4")
+            if path.is_file() and path.stat().st_mtime >= started_at - 1
+        )
+        if output_path and Path(output_path).exists() and Path(output_path) not in final_paths:
+            final_paths.append(Path(output_path))
+
+        if final_paths:
+            output_path = str(final_paths[0]) if len(final_paths) == 1 else str(destination)
+
+        for final_path in final_paths:
+            if not is_mac_playable_mp4(final_path):
                 jobs.update(
                     job_id,
                     status="running",
@@ -260,6 +338,7 @@ def download_url(
             progress=100.0,
             title=info.get("title") if info else None,
             output_path=output_path,
+            output_paths=[str(path) for path in final_paths] or ([output_path] if output_path else []),
             message="Completed",
         )
     except Exception as exc:
