@@ -7,6 +7,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from .downloader import DEFAULT_OUTPUT_DIR, DownloadError, download_url, ffmpeg_available, probe_url
 from .jobs import jobs
@@ -17,6 +18,18 @@ STATIC_DIR = ROOT_DIR / "static"
 
 app = FastAPI(title="MyTools Video Downloader")
 executor = ThreadPoolExecutor(max_workers=2)
+
+
+class NoCacheMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
+
+
+app.add_middleware(NoCacheMiddleware)
 
 
 class ProbeRequest(BaseModel):
