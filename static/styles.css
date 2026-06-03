@@ -114,6 +114,12 @@ select {
   color: #1e2528;
 }
 
+select:disabled {
+  opacity: 1;
+  color: #43565c;
+  background: #eef4f5;
+}
+
 input:focus,
 select:focus {
   outline: 2px solid #4e9bb0;

@@ -19,7 +19,7 @@
 
         <label class="field">
           <span>视频链接</span>
-          <input id="urlInput" type="url" placeholder="https://www.youtube.com/watch?v=..." autocomplete="off" />
+          <input id="urlInput" type="text" placeholder="粘贴视频链接或分享文本" autocomplete="off" />
         </label>
 
         <div class="grid">
@@ -41,6 +41,18 @@
         </div>
 
         <div class="grid">
+          <label class="field">
+            <span>链接来源</span>
+            <select id="platformHint" disabled>
+              <option value="waiting">待识别</option>
+              <option value="generic">通用链接</option>
+              <option value="bilibili">哔哩哔哩</option>
+              <option value="youtube">YouTube</option>
+              <option value="xiaohongshu">小红书</option>
+              <option value="douyin">抖音</option>
+            </select>
+          </label>
+
           <label class="field">
             <span>下载质量</span>
             <select id="quality">

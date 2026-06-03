@@ -18,6 +18,16 @@ SUPPORTED_COOKIE_SOURCES = {"none", "chrome"}
 SUPPORTED_DOWNLOAD_SCOPES = {"single", "collection"}
 SUPPORTED_QUALITIES = {"best", "60fps", "1080p", "720p", "480p", "360p"}
 RESERVED_MAC_FILENAMES = {".", ".."}
+URL_PATTERN = re.compile(r"https?://[^\s，。；、]+")
+TRAILING_URL_PUNCTUATION = ".,;:!?)]}\"'，。；：！？）】」』"
+DEFAULT_HTTP_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/125.0.0.0 Safari/537.36"
+    ),
+    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+}
 
 
 def mac_compatible_format(height: int | None = None, prefer_60fps: bool = False) -> str:
@@ -88,8 +98,28 @@ def format_for_quality(quality: str | None) -> str:
     return mac_compatible_format()
 
 
+def extract_first_url(value: str) -> str:
+    match = URL_PATTERN.search(value.strip())
+    if not match:
+        return value.strip()
+    return match.group(0).rstrip(TRAILING_URL_PUNCTUATION)
+
+
+def detect_platform(url: str) -> dict[str, str]:
+    host = urlparse(url).netloc.lower()
+    if any(domain in host for domain in ("douyin.com", "iesdouyin.com", "amemv.com")):
+        return {"id": "douyin", "label": "抖音"}
+    if any(domain in host for domain in ("bilibili.com", "b23.tv")):
+        return {"id": "bilibili", "label": "哔哩哔哩"}
+    if any(domain in host for domain in ("youtube.com", "youtu.be")):
+        return {"id": "youtube", "label": "YouTube"}
+    if any(domain in host for domain in ("xiaohongshu.com", "xhslink.com")):
+        return {"id": "xiaohongshu", "label": "小红书"}
+    return {"id": "generic", "label": "通用链接"}
+
+
 def validate_url(url: str) -> str:
-    value = url.strip()
+    value = extract_first_url(url)
     parsed = urlparse(value)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         raise DownloadError("请输入有效的 http 或 https 视频链接。")
@@ -205,7 +235,13 @@ def transcode_for_mac(path: Path) -> None:
         raise DownloadError(readable_error(exc)) from exc
 
 
-def ydl_options(cookie_source: str, download_scope: str = "single", *, quiet: bool = True) -> dict[str, Any]:
+def ydl_options(
+    cookie_source: str,
+    download_scope: str = "single",
+    *,
+    quiet: bool = True,
+    url: str | None = None,
+) -> dict[str, Any]:
     opts: dict[str, Any] = {
         "quiet": quiet,
         "no_warnings": quiet,
@@ -216,7 +252,10 @@ def ydl_options(cookie_source: str, download_scope: str = "single", *, quiet: bo
         "extractor_retries": 5,
         "file_access_retries": 5,
         "socket_timeout": 30,
+        "http_headers": DEFAULT_HTTP_HEADERS.copy(),
     }
+    if url and detect_platform(url)["id"] == "douyin":
+        opts["http_headers"]["Referer"] = "https://www.douyin.com/"
     if cookie_source == "chrome":
         opts["cookiesfrombrowser"] = ("chrome",)
     return opts
@@ -231,7 +270,7 @@ def probe_url(
     cookie_source = normalize_cookie_source(cookie_source)
     download_scope = normalize_download_scope(download_scope)
     url = normalize_url_for_scope(url, download_scope)
-    options = ydl_options(cookie_source, download_scope)
+    options = ydl_options(cookie_source, download_scope, url=url)
     options["skip_download"] = True
 
     try:
@@ -250,6 +289,7 @@ def probe_url(
         "title": info.get("title"),
         "extractor": info.get("extractor"),
         "webpage_url": info.get("webpage_url") or url,
+        "platform": detect_platform(url),
         "duration": info.get("duration"),
         "uploader": info.get("uploader") or info.get("channel"),
         "format_count": len(formats),
@@ -324,7 +364,7 @@ def download_url(
         entry_urls: list[str] = []
         playlist_info: dict[str, Any] | None = None
         if download_scope == "collection":
-            probe_options = ydl_options(cookie_source, download_scope)
+            probe_options = ydl_options(cookie_source, download_scope, url=url)
             probe_options["skip_download"] = True
             with yt_dlp.YoutubeDL(probe_options) as ydl:
                 playlist_info = ydl.extract_info(url, download=False)
@@ -344,7 +384,7 @@ def download_url(
 
         destination.mkdir(parents=True, exist_ok=True)
         started_at = time.time()
-        options = ydl_options(cookie_source, "single" if entry_urls else download_scope)
+        options = ydl_options(cookie_source, "single" if entry_urls else download_scope, url=url)
         options.update(
             {
                 "format": selected_format,

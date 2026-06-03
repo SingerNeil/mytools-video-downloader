@@ -1,6 +1,7 @@
 const urlInput = document.querySelector("#urlInput");
 const cookieSource = document.querySelector("#cookieSource");
 const downloadScope = document.querySelector("#downloadScope");
+const platformHint = document.querySelector("#platformHint");
 const quality = document.querySelector("#quality");
 const outputDir = document.querySelector("#outputDir");
 const probeBtn = document.querySelector("#probeBtn");
@@ -15,6 +16,7 @@ const log = document.querySelector("#log");
 
 let pollTimer = null;
 let saveOutputDirTimer = null;
+let lastLinkDefaultsKey = "";
 
 const stateLabels = {
   queued: "排队中",
@@ -36,6 +38,15 @@ const messageLabels = {
   Failed: "下载失败",
 };
 
+const platformLabels = {
+  waiting: "待识别",
+  generic: "通用链接",
+  bilibili: "哔哩哔哩",
+  youtube: "YouTube",
+  xiaohongshu: "小红书",
+  douyin: "抖音",
+};
+
 function writeLog(line) {
   const time = new Date().toLocaleTimeString();
   log.textContent = `${log.textContent}[${time}] ${line}\n`;
@@ -55,6 +66,77 @@ function setState(state) {
 function updateProgress(value) {
   const progress = Math.max(0, Math.min(100, Number(value) || 0));
   progressBar.style.width = `${progress}%`;
+}
+
+function extractFirstUrl(value) {
+  const match = value.trim().match(/https?:\/\/[^\s，。；、]+/);
+  if (!match) {
+    return value.trim();
+  }
+  return match[0].replace(/[.,;:!?)]}"'，。；：！？）】」』]+$/g, "");
+}
+
+function detectPlatform(parsedUrl) {
+  const host = parsedUrl.hostname.toLowerCase();
+  if (host.includes("douyin.com") || host.includes("iesdouyin.com") || host.includes("amemv.com")) {
+    return "douyin";
+  }
+  if (host.includes("bilibili.com") || host === "b23.tv") {
+    return "bilibili";
+  }
+  if (host.includes("youtube.com") || host === "youtu.be") {
+    return "youtube";
+  }
+  if (host.includes("xiaohongshu.com") || host === "xhslink.com") {
+    return "xiaohongshu";
+  }
+  return "generic";
+}
+
+function detectRecommendedScope(parsedUrl, platform) {
+  const path = parsedUrl.pathname.toLowerCase();
+  if (platform === "youtube" && parsedUrl.searchParams.has("list")) {
+    return "collection";
+  }
+  if (platform === "bilibili") {
+    if (parsedUrl.searchParams.has("p")) {
+      return "collection";
+    }
+    if (path.includes("/medialist/") || path.includes("/list/") || path.includes("/bangumi/play/")) {
+      return "collection";
+    }
+  }
+  return "single";
+}
+
+function applyLinkDefaults() {
+  const rawValue = urlInput.value.trim();
+  if (!rawValue) {
+    platformHint.value = "waiting";
+    lastLinkDefaultsKey = "";
+    return;
+  }
+
+  const firstUrl = extractFirstUrl(rawValue);
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(firstUrl);
+  } catch {
+    platformHint.value = "waiting";
+    return;
+  }
+
+  const platform = detectPlatform(parsedUrl);
+  const recommendedScope = detectRecommendedScope(parsedUrl, platform);
+  const nextKey = `${platform}:${recommendedScope}:${firstUrl}`;
+  platformHint.value = platform;
+  downloadScope.value = recommendedScope;
+
+  if (nextKey !== lastLinkDefaultsKey) {
+    const scopeText = recommendedScope === "collection" ? "下载整个合集/列表" : "仅下载当前视频";
+    message.textContent = `已识别：${platformLabels[platform]}，已切换为“${scopeText}”。`;
+    lastLinkDefaultsKey = nextKey;
+  }
 }
 
 async function api(path, body) {
@@ -121,7 +203,8 @@ async function probe() {
     title.textContent = data.title || "-";
     savedFile.textContent = "-";
     const scopeText = data.download_scope === "collection" ? `，合集/列表内检测到 ${data.entry_count || 0} 个条目` : "";
-    message.textContent = `检测成功：${data.extractor || "解析器"} 找到 ${data.format_count || 0} 个可用格式${scopeText}。`;
+    const platformText = data.platform && data.platform.label ? `${data.platform.label}，` : "";
+    message.textContent = `检测成功：${platformText}${data.extractor || "解析器"} 找到 ${data.format_count || 0} 个可用格式${scopeText}。`;
     writeLog(`检测成功：${data.title || data.webpage_url}`);
     if (!data.ffmpeg_available) {
       writeLog("缺少 ffmpeg，请运行：brew install ffmpeg");
@@ -205,6 +288,10 @@ async function pollJob(jobId) {
 
 probeBtn.addEventListener("click", probe);
 downloadBtn.addEventListener("click", startDownload);
+urlInput.addEventListener("input", applyLinkDefaults);
+urlInput.addEventListener("paste", () => {
+  window.setTimeout(applyLinkDefaults, 0);
+});
 outputDir.addEventListener("change", () => {
   saveOutputDir().catch((error) => writeLog(`保存位置失败：${error.message}`));
 });
