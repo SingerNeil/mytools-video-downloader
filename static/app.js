@@ -186,6 +186,9 @@ async function loadHealth() {
     envBadge.className = "badge warn";
     writeLog("缺少 ffmpeg，高清下载和格式转换需要先安装：brew install ffmpeg");
   }
+  if (!data.youtube_ejs_available) {
+    writeLog("YouTube 下载需要 Node 22+ 和 yt-dlp-ejs；请停止服务后重新运行 ./run.sh 安装依赖。");
+  }
 }
 
 async function probe() {

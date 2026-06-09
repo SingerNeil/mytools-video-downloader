@@ -8,11 +8,18 @@
 - Python 3.10+，这台 Mac 推荐使用 Homebrew Python 3.12
 - Homebrew
 - `ffmpeg`，用于合并视频和音频
+- Node 22+，用于 YouTube 的 JS 挑战解析
 
 如果页面提示缺少 `ffmpeg`，先安装：
 
 ```bash
 brew install ffmpeg
+```
+
+如果 YouTube 下载提示没有可用格式，先确认 Node 已安装：
+
+```bash
+brew install node
 ```
 
 ## 启动
@@ -66,14 +73,15 @@ http://127.0.0.1:8765
 - 页面里修改保存目录后，会写入本地 `user_settings.json`。这个文件已加入 `.gitignore`，不会上传到 GitHub。
 - 会员清晰度仍然取决于你的账号权限。需要先在 Chrome 里登录对应网站，再选择 `读取 Chrome 登录状态`。
 - 抖音链接由 `yt-dlp` 的 Douyin 解析器处理。部分短链、私密视频或风控页面可能需要先在 Chrome 登录抖音，再选择 `读取 Chrome 登录状态`。
+- YouTube 下载需要 `yt-dlp-ejs` 和 Node 22+ 来解析 YouTube 的 JS 挑战。`./run.sh` 会按 `requirements.txt` 自动安装 `yt-dlp[default]`，其中包含 `yt-dlp-ejs`。
 - 工具不会保存用户名或密码。
 - 下载优先选择 Mac 兼容的 H.264/AAC MP4。如果平台只给 AV1/VP9 等 Mac 可能只播声音的格式，工具会自动转成 Mac 可播放的 H.264 MP4。
-- 部分平台页面变化很频繁。如果突然不能下载，优先更新 `yt-dlp`：
+- 部分平台页面变化很频繁。如果突然不能下载，优先更新 `yt-dlp` 及其默认依赖：
 
 ```bash
 cd /Users/ming/codes/My_Tools/video_downloader
 . .venv/bin/activate
-python -m pip install --upgrade yt-dlp
+python -m pip install --upgrade "yt-dlp[default]"
 ```
 
 - DRM 保护、已过期、私密或暂不支持的链接可能无法下载。

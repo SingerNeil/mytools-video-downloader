@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from .downloader import DownloadError, download_url, ffmpeg_available, probe_url
+from .downloader import DownloadError, download_url, ffmpeg_available, probe_url, youtube_ejs_available
 from .jobs import jobs
 from .settings import load_settings, save_settings
 
@@ -62,6 +62,7 @@ def health() -> dict[str, object]:
     return {
         "ok": True,
         "ffmpeg_available": ffmpeg_available(),
+        "youtube_ejs_available": youtube_ejs_available(),
         "default_output_dir": settings["output_dir"],
     }
 

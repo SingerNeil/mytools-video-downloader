@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 import re
 import shutil
 import subprocess
@@ -57,6 +58,10 @@ class DownloadError(RuntimeError):
 
 def ffmpeg_available() -> bool:
     return shutil.which("ffmpeg") is not None
+
+
+def youtube_ejs_available() -> bool:
+    return shutil.which("node") is not None and importlib.util.find_spec("yt_dlp_ejs") is not None
 
 
 def safe_path_name(value: str | None, fallback: str = "未命名合集") -> str:
@@ -152,6 +157,11 @@ def readable_error(exc: BaseException) -> str:
     text = str(exc).strip()
     if "Unsupported URL" in text:
         return "这个网站或链接格式暂时不支持。"
+    if "n challenge solving failed" in text or "Requested format is not available" in text:
+        return (
+            "YouTube 没有返回可下载的视频格式。请先停止服务并重新运行 ./run.sh，"
+            "确保依赖安装完成；YouTube 下载需要 Node 22+ 和 yt-dlp-ejs。"
+        )
     if "Private video" in text or "login" in text.lower():
         return "这个视频可能需要登录。请先在 Chrome 里登录对应网站，然后选择“读取 Chrome 登录状态”。"
     if "DRM" in text.upper():
@@ -254,8 +264,11 @@ def ydl_options(
         "socket_timeout": 30,
         "http_headers": DEFAULT_HTTP_HEADERS.copy(),
     }
-    if url and detect_platform(url)["id"] == "douyin":
+    platform_id = detect_platform(url)["id"] if url else None
+    if platform_id == "douyin":
         opts["http_headers"]["Referer"] = "https://www.douyin.com/"
+    if platform_id == "youtube" and shutil.which("node"):
+        opts["js_runtimes"] = {"node": {}}
     if cookie_source == "chrome":
         opts["cookiesfrombrowser"] = ("chrome",)
     return opts
