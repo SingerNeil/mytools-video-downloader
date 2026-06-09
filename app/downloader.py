@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import re
+import select
 import shutil
 import subprocess
 import time
@@ -20,6 +22,10 @@ SUPPORTED_DOWNLOAD_SCOPES = {"single", "collection"}
 SUPPORTED_QUALITIES = {"best", "60fps", "2160p", "1440p", "1080p", "720p", "480p", "360p"}
 RESERVED_MAC_FILENAMES = {".", ".."}
 VIDEO_EXTENSIONS = {".mp4", ".m4v", ".mov", ".mkv", ".webm"}
+DOWNLOAD_PROGRESS_LIMIT = 95.0
+TRANSCODE_PROGRESS_START = 95.0
+TRANSCODE_PROGRESS_END = 99.5
+TRANSCODE_NO_PROGRESS_TIMEOUT_SECONDS = 300
 URL_PATTERN = re.compile(r"https?://[^\s，。；、]+")
 TRAILING_URL_PUNCTUATION = ".,;:!?)]}\"'，。；：！？）】」』"
 DEFAULT_HTTP_HEADERS = {
@@ -170,8 +176,16 @@ def collection_output_dir(base_dir: Path, title: str | None) -> Path:
     return base_dir / safe_path_name(title)
 
 
+def cleanup_visible_transcode_temps(destination: Path) -> None:
+    for path in destination.glob("*.mac-compatible.tmp.mp4"):
+        path.unlink(missing_ok=True)
+
+
 def readable_error(exc: BaseException) -> str:
-    text = str(exc).strip()
+    if isinstance(exc, subprocess.CalledProcessError):
+        text = (exc.stderr or exc.output or str(exc)).strip()
+    else:
+        text = str(exc).strip()
     if "Unsupported URL" in text:
         return "这个网站或链接格式暂时不支持。"
     if "n challenge solving failed" in text or "Requested format is not available" in text:
@@ -216,8 +230,12 @@ def extract_info_with_retries(
 ) -> dict[str, Any] | None:
     for attempt in range(1, 4):
         try:
+            if job_id and jobs.is_cancel_requested(job_id):
+                raise DownloadError("任务已停止。")
             return ydl.extract_info(url, download=download)
         except Exception as exc:
+            if isinstance(exc, DownloadError):
+                raise
             if attempt == 3 or not is_retryable_network_error(exc):
                 raise
             if job_id:
@@ -230,9 +248,9 @@ def extract_info_with_retries(
     return None
 
 
-def ffprobe_streams(path: Path) -> list[dict[str, Any]]:
+def ffprobe_media_info(path: Path) -> dict[str, Any]:
     if not shutil.which("ffprobe"):
-        return []
+        return {}
 
     result = subprocess.run(
         [
@@ -240,7 +258,7 @@ def ffprobe_streams(path: Path) -> list[dict[str, Any]]:
             "-v",
             "error",
             "-show_entries",
-            "stream=codec_type,codec_name,pix_fmt",
+            "format=duration:stream=codec_type,codec_name,pix_fmt,width,height",
             "-of",
             "json",
             str(path),
@@ -249,9 +267,20 @@ def ffprobe_streams(path: Path) -> list[dict[str, Any]]:
         capture_output=True,
         text=True,
     )
-    import json
+    return json.loads(result.stdout)
 
-    return json.loads(result.stdout).get("streams") or []
+
+def ffprobe_streams(path: Path) -> list[dict[str, Any]]:
+    return ffprobe_media_info(path).get("streams") or []
+
+
+def ffprobe_duration(path: Path) -> float | None:
+    duration = (ffprobe_media_info(path).get("format") or {}).get("duration")
+    try:
+        value = float(duration)
+    except (TypeError, ValueError):
+        return None
+    return value if value > 0 else None
 
 
 def is_mac_playable_mp4(path: Path) -> bool:
@@ -266,27 +295,158 @@ def is_mac_playable_mp4(path: Path) -> bool:
     return video_ok and audio_ok
 
 
-def transcode_for_mac(path: Path) -> Path:
-    if not ffmpeg_available():
-        raise DownloadError("需要 ffmpeg 才能转换成 Mac 可播放的视频。请先运行：brew install ffmpeg")
+def transcode_bitrate(path: Path) -> str:
+    streams = ffprobe_streams(path)
+    video = next((stream for stream in streams if stream.get("codec_type") == "video"), None)
+    height = int(video.get("height") or 0) if video else 0
+    if height >= 2160:
+        return "24M"
+    if height >= 1440:
+        return "16M"
+    if height >= 1080:
+        return "10M"
+    if height >= 720:
+        return "6M"
+    return "3500k"
 
-    final_path = path if path.suffix.lower() == ".mp4" else path.with_suffix(".mp4")
-    temp_path = final_path.with_name(f"{final_path.stem}.mac-compatible.tmp.mp4")
-    command = [
+
+def terminate_process(process: subprocess.Popen[str]) -> None:
+    if process.poll() is not None:
+        return
+    process.terminate()
+    try:
+        process.wait(timeout=8)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=8)
+
+
+def run_ffmpeg_with_progress(
+    command: list[str],
+    *,
+    job_id: str,
+    duration: float | None,
+    message: str,
+) -> None:
+    process = subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+    )
+    last_progress_change = time.monotonic()
+    last_media_seconds = 0.0
+    recent_output: list[str] = []
+
+    try:
+        while True:
+            if jobs.is_cancel_requested(job_id):
+                terminate_process(process)
+                raise DownloadError("任务已停止。")
+
+            if process.stdout:
+                ready, _, _ = select.select([process.stdout], [], [], 1.0)
+            else:
+                ready = []
+
+            if ready and process.stdout:
+                line = process.stdout.readline()
+                if line:
+                    line = line.strip()
+                    if line:
+                        recent_output.append(line)
+                        recent_output = recent_output[-20:]
+
+                    key, _, value = line.partition("=")
+                    if key in {"out_time_ms", "out_time_us"}:
+                        try:
+                            media_seconds = float(value) / 1_000_000
+                        except ValueError:
+                            media_seconds = last_media_seconds
+                        if media_seconds > last_media_seconds + 0.2:
+                            last_media_seconds = media_seconds
+                            last_progress_change = time.monotonic()
+                        if duration:
+                            transcode_percent = max(0.0, min(100.0, media_seconds / duration * 100.0))
+                            progress = TRANSCODE_PROGRESS_START + (
+                                TRANSCODE_PROGRESS_END - TRANSCODE_PROGRESS_START
+                            ) * transcode_percent / 100.0
+                            jobs.update(
+                                job_id,
+                                status="running",
+                                progress=progress,
+                                message=f"{message}（{transcode_percent:.1f}%）",
+                            )
+                    elif key == "progress" and value == "end":
+                        jobs.update(
+                            job_id,
+                            status="running",
+                            progress=TRANSCODE_PROGRESS_END,
+                            message=f"{message}（整理文件）",
+                        )
+
+            returncode = process.poll()
+            if returncode is not None:
+                if process.stdout:
+                    remaining = process.stdout.read()
+                    if remaining:
+                        recent_output.extend(line.strip() for line in remaining.splitlines() if line.strip())
+                if returncode != 0:
+                    raise subprocess.CalledProcessError(
+                        returncode,
+                        command,
+                        output="\n".join(recent_output[-40:]),
+                    )
+                return
+
+            if time.monotonic() - last_progress_change > TRANSCODE_NO_PROGRESS_TIMEOUT_SECONDS:
+                terminate_process(process)
+                raise DownloadError(
+                    "转换阶段超过 5 分钟没有任何进度，已自动停止。"
+                    "可以重试，或者先选择 1080P/1440P 降低转码压力。"
+                )
+    except Exception:
+        terminate_process(process)
+        raise
+
+
+def transcode_command(path: Path, temp_path: Path, *, hardware: bool) -> list[str]:
+    encoder_args = (
+        [
+            "-c:v",
+            "h264_videotoolbox",
+            "-b:v",
+            transcode_bitrate(path),
+            "-profile:v",
+            "high",
+        ]
+        if hardware
+        else [
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-crf",
+            "20",
+        ]
+    )
+    return [
         "ffmpeg",
         "-y",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-nostats",
+        "-stats_period",
+        "1",
         "-i",
         str(path),
         "-map",
         "0:v:0",
         "-map",
         "0:a?",
-        "-c:v",
-        "libx264",
-        "-preset",
-        "veryfast",
-        "-crf",
-        "20",
+        *encoder_args,
         "-pix_fmt",
         "yuv420p",
         "-c:a",
@@ -295,17 +455,70 @@ def transcode_for_mac(path: Path) -> Path:
         "160k",
         "-movflags",
         "+faststart",
+        "-progress",
+        "pipe:1",
         str(temp_path),
     ]
+
+
+def transcode_for_mac(path: Path, job_id: str) -> Path:
+    if not ffmpeg_available():
+        raise DownloadError("需要 ffmpeg 才能转换成 Mac 可播放的视频。请先运行：brew install ffmpeg")
+
+    final_path = path if path.suffix.lower() == ".mp4" else path.with_suffix(".mp4")
+    temp_dir = final_path.parent / ".mytools_tmp"
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    temp_path = temp_dir / f"{final_path.stem}.mac-compatible.tmp.mp4"
+    temp_path.unlink(missing_ok=True)
+    duration = ffprobe_duration(path)
+    message = "正在转换为 Mac 可播放 MP4"
+
     try:
-        subprocess.run(command, check=True, capture_output=True, text=True)
+        jobs.update(
+            job_id,
+            status="running",
+            progress=TRANSCODE_PROGRESS_START,
+            message=f"{message}（准备中，4K 视频可能需要较长时间）",
+            output_path=str(final_path),
+        )
+        try:
+            run_ffmpeg_with_progress(
+                transcode_command(path, temp_path, hardware=True),
+                job_id=job_id,
+                duration=duration,
+                message=message,
+            )
+        except subprocess.CalledProcessError as hardware_exc:
+            temp_path.unlink(missing_ok=True)
+            jobs.update(
+                job_id,
+                status="running",
+                progress=TRANSCODE_PROGRESS_START,
+                message=f"{message}（硬件转码失败，改用兼容模式）",
+            )
+            run_ffmpeg_with_progress(
+                transcode_command(path, temp_path, hardware=False),
+                job_id=job_id,
+                duration=duration,
+                message=message,
+            )
         temp_path.replace(final_path)
         if final_path != path:
             path.unlink(missing_ok=True)
+        jobs.update(
+            job_id,
+            status="running",
+            progress=TRANSCODE_PROGRESS_END,
+            message=f"{message}（整理文件）",
+            output_path=str(final_path),
+        )
         return final_path
     except subprocess.CalledProcessError as exc:
         temp_path.unlink(missing_ok=True)
         raise DownloadError(readable_error(exc)) from exc
+    except Exception:
+        temp_path.unlink(missing_ok=True)
+        raise
 
 
 def ydl_options(
@@ -396,6 +609,9 @@ def download_url(
         progress_context = {"index": 0, "total": 1}
 
         def progress_hook(data: dict[str, Any]) -> None:
+            if jobs.is_cancel_requested(job_id):
+                raise DownloadError("任务已停止。")
+
             status = data.get("status")
             if status == "downloading":
                 total = data.get("total_bytes") or data.get("total_bytes_estimate")
@@ -407,12 +623,12 @@ def download_url(
                     progress = (
                         (progress_context["index"] - 1 + item_progress / 100.0)
                         / progress_context["total"]
-                        * 99.0
+                        * DOWNLOAD_PROGRESS_LIMIT
                     )
                     status_message = f"正在下载第 {progress_context['index']}/{progress_context['total']} 个视频"
                 else:
-                    progress = item_progress
-                    status_message = "Downloading"
+                    progress = item_progress * DOWNLOAD_PROGRESS_LIMIT / 100.0
+                    status_message = "正在下载"
                 jobs.update(
                     job_id,
                     status="running",
@@ -425,14 +641,14 @@ def download_url(
                 )
             elif status == "finished":
                 if progress_context["total"] > 1:
-                    progress = progress_context["index"] / progress_context["total"] * 99.0
+                    progress = progress_context["index"] / progress_context["total"] * DOWNLOAD_PROGRESS_LIMIT
                 else:
-                    progress = 99.0
+                    progress = DOWNLOAD_PROGRESS_LIMIT
                 jobs.update(
                     job_id,
                     status="running",
                     progress=progress,
-                    message="Merging and finalizing",
+                    message="正在合并并整理文件",
                     output_path=data.get("filename"),
                 )
 
@@ -465,6 +681,7 @@ def download_url(
             entry_urls = []
 
         destination.mkdir(parents=True, exist_ok=True)
+        cleanup_visible_transcode_temps(destination)
         started_at = time.time()
         options = ydl_options(cookie_source, "single" if entry_urls else download_scope, url=url)
         options.update(
@@ -485,6 +702,8 @@ def download_url(
                 progress_context["total"] = len(entry_urls)
                 for index, entry_url in enumerate(entry_urls, start=1):
                     progress_context["index"] = index
+                    if jobs.is_cancel_requested(job_id):
+                        raise DownloadError("任务已停止。")
                     jobs.update(
                         job_id,
                         status="running",
@@ -528,10 +747,10 @@ def download_url(
                 jobs.update(
                     job_id,
                     status="running",
-                    progress=99.0,
-                    message="Converting to Mac-compatible H.264 MP4",
+                    progress=TRANSCODE_PROGRESS_START,
+                    message="正在转换为 Mac 可播放 MP4",
                 )
-                final_paths[index] = transcode_for_mac(final_path)
+                final_paths[index] = transcode_for_mac(final_path, job_id)
 
         if final_paths:
             output_path = str(destination) if download_scope == "collection" else str(final_paths[0])
@@ -543,12 +762,20 @@ def download_url(
             title=info.get("title") if info else None,
             output_path=output_path,
             output_paths=[str(path) for path in final_paths] or ([output_path] if output_path else []),
-            message="Completed",
+            message="下载完成",
         )
     except Exception as exc:
+        if jobs.is_cancel_requested(job_id) or str(exc).strip() == "任务已停止。":
+            jobs.update(
+                job_id,
+                status="canceled",
+                error=None,
+                message="任务已停止",
+            )
+            return
         jobs.update(
             job_id,
             status="error",
             error=readable_error(exc),
-            message="Failed",
+            message="下载失败",
         )

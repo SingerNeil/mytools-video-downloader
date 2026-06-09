@@ -6,6 +6,7 @@ const quality = document.querySelector("#quality");
 const outputDir = document.querySelector("#outputDir");
 const probeBtn = document.querySelector("#probeBtn");
 const downloadBtn = document.querySelector("#downloadBtn");
+const cancelBtn = document.querySelector("#cancelBtn");
 const envBadge = document.querySelector("#envBadge");
 const jobState = document.querySelector("#jobState");
 const progressBar = document.querySelector("#progressBar");
@@ -17,12 +18,14 @@ const log = document.querySelector("#log");
 let pollTimer = null;
 let saveOutputDirTimer = null;
 let lastLinkDefaultsKey = "";
+let currentJobId = null;
 
 const stateLabels = {
   queued: "排队中",
   running: "下载中",
   completed: "已完成",
   error: "出错",
+  canceled: "已停止",
   probing: "检测中",
   ready: "可下载",
   idle: "空闲",
@@ -36,6 +39,7 @@ const messageLabels = {
   "Converting to Mac-compatible H.264 MP4": "正在转换为 Mac 可播放的 H.264 MP4",
   Completed: "下载完成",
   Failed: "下载失败",
+  "任务已停止": "任务已停止",
 };
 
 const platformLabels = {
@@ -56,6 +60,7 @@ function writeLog(line) {
 function setBusy(isBusy) {
   probeBtn.disabled = isBusy;
   downloadBtn.disabled = isBusy;
+  cancelBtn.disabled = !isBusy || !currentJobId;
 }
 
 function setState(state) {
@@ -235,6 +240,8 @@ async function startDownload() {
   try {
     await saveOutputDir(true);
     const job = await api("/api/download", payload);
+    currentJobId = job.id;
+    setBusy(true);
     writeLog(`下载任务已创建：${job.id}`);
     pollJob(job.id);
   } catch (error) {
@@ -242,6 +249,22 @@ async function startDownload() {
     writeLog(`下载启动失败：${error.message}`);
     setState("error");
     setBusy(false);
+  }
+}
+
+async function cancelDownload() {
+  if (!currentJobId) {
+    return;
+  }
+
+  cancelBtn.disabled = true;
+  message.textContent = "正在停止任务，请稍等。";
+  writeLog("正在停止当前任务。");
+  try {
+    await api(`/api/jobs/${currentJobId}/cancel`, {});
+  } catch (error) {
+    writeLog(`停止任务失败：${error.message}`);
+    cancelBtn.disabled = false;
   }
 }
 
@@ -270,12 +293,21 @@ async function pollJob(jobId) {
     if (job.status === "completed") {
       const countText = Array.isArray(job.output_paths) && job.output_paths.length > 1 ? `，共 ${job.output_paths.length} 个文件` : "";
       writeLog(`下载完成${countText}：${job.output_path || "文件已保存"}`);
+      currentJobId = null;
       setBusy(false);
       return;
     }
 
     if (job.status === "error") {
       writeLog(`下载失败：${job.error || "未知错误"}`);
+      currentJobId = null;
+      setBusy(false);
+      return;
+    }
+
+    if (job.status === "canceled") {
+      writeLog("任务已停止。");
+      currentJobId = null;
       setBusy(false);
       return;
     }
@@ -291,6 +323,7 @@ async function pollJob(jobId) {
 
 probeBtn.addEventListener("click", probe);
 downloadBtn.addEventListener("click", startDownload);
+cancelBtn.addEventListener("click", cancelDownload);
 urlInput.addEventListener("input", applyLinkDefaults);
 urlInput.addEventListener("paste", () => {
   window.setTimeout(applyLinkDefaults, 0);

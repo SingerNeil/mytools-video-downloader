@@ -28,6 +28,7 @@ class DownloadJob:
     total_bytes: int | None = None
     speed: float | None = None
     eta: float | None = None
+    cancel_requested: bool = False
 
     def snapshot(self) -> dict[str, Any]:
         return asdict(self)
@@ -66,6 +67,22 @@ class JobStore:
                     setattr(job, key, value)
             job.updated_at = utc_now_iso()
             return job
+
+    def request_cancel(self, job_id: str) -> DownloadJob | None:
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None:
+                return None
+            job.cancel_requested = True
+            if job.status in {"queued", "running"}:
+                job.message = "正在停止任务"
+            job.updated_at = utc_now_iso()
+            return job
+
+    def is_cancel_requested(self, job_id: str) -> bool:
+        with self._lock:
+            job = self._jobs.get(job_id)
+            return bool(job and job.cancel_requested)
 
 
 jobs = JobStore()
