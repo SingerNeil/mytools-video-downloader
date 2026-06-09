@@ -17,8 +17,9 @@ from .jobs import jobs
 DEFAULT_OUTPUT_DIR = Path.home() / "Downloads" / "MyToolsVideos"
 SUPPORTED_COOKIE_SOURCES = {"none", "chrome"}
 SUPPORTED_DOWNLOAD_SCOPES = {"single", "collection"}
-SUPPORTED_QUALITIES = {"best", "60fps", "1080p", "720p", "480p", "360p"}
+SUPPORTED_QUALITIES = {"best", "60fps", "2160p", "1440p", "1080p", "720p", "480p", "360p"}
 RESERVED_MAC_FILENAMES = {".", ".."}
+VIDEO_EXTENSIONS = {".mp4", ".m4v", ".mov", ".mkv", ".webm"}
 URL_PATTERN = re.compile(r"https?://[^\s，。；、]+")
 TRAILING_URL_PUNCTUATION = ".,;:!?)]}\"'，。；：！？）】」』"
 DEFAULT_HTTP_HEADERS = {
@@ -103,6 +104,22 @@ def format_for_quality(quality: str | None) -> str:
     return mac_compatible_format()
 
 
+def youtube_format_for_quality(quality: str | None) -> str:
+    selected = normalize_quality(quality)
+    if selected == "60fps":
+        return "bv*[fps>=50]+ba/bv*[fps>=50]/bv*+ba/b"
+    if selected.endswith("p"):
+        height = int(selected.removesuffix("p"))
+        return f"bv*[height<={height}]+ba/b[height<={height}]/bv*[height<={height}]/b"
+    return "bv*+ba/b"
+
+
+def format_for_url(quality: str | None, url: str) -> str:
+    if detect_platform(url)["id"] == "youtube":
+        return youtube_format_for_quality(quality)
+    return format_for_quality(quality)
+
+
 def extract_first_url(value: str) -> str:
     match = URL_PATTERN.search(value.strip())
     if not match:
@@ -171,6 +188,48 @@ def readable_error(exc: BaseException) -> str:
     return exc.__class__.__name__
 
 
+def is_retryable_network_error(exc: BaseException) -> bool:
+    text = str(exc)
+    retryable_markers = (
+        "UNEXPECTED_EOF",
+        "Connection reset",
+        "Connection aborted",
+        "Remote end closed",
+        "timed out",
+        "Timeout",
+        "HTTP Error 500",
+        "HTTP Error 502",
+        "HTTP Error 503",
+        "HTTP Error 504",
+        "IncompleteRead",
+    )
+    return any(marker in text for marker in retryable_markers)
+
+
+def extract_info_with_retries(
+    ydl: yt_dlp.YoutubeDL,
+    url: str,
+    *,
+    download: bool,
+    job_id: str | None = None,
+    message: str = "网络连接中断",
+) -> dict[str, Any] | None:
+    for attempt in range(1, 4):
+        try:
+            return ydl.extract_info(url, download=download)
+        except Exception as exc:
+            if attempt == 3 or not is_retryable_network_error(exc):
+                raise
+            if job_id:
+                jobs.update(
+                    job_id,
+                    status="running",
+                    message=f"{message}，正在第 {attempt + 1} 次尝试",
+                )
+            time.sleep(attempt * 2)
+    return None
+
+
 def ffprobe_streams(path: Path) -> list[dict[str, Any]]:
     if not shutil.which("ffprobe"):
         return []
@@ -207,11 +266,12 @@ def is_mac_playable_mp4(path: Path) -> bool:
     return video_ok and audio_ok
 
 
-def transcode_for_mac(path: Path) -> None:
+def transcode_for_mac(path: Path) -> Path:
     if not ffmpeg_available():
         raise DownloadError("需要 ffmpeg 才能转换成 Mac 可播放的视频。请先运行：brew install ffmpeg")
 
-    temp_path = path.with_name(f"{path.stem}.mac-compatible.tmp.mp4")
+    final_path = path if path.suffix.lower() == ".mp4" else path.with_suffix(".mp4")
+    temp_path = final_path.with_name(f"{final_path.stem}.mac-compatible.tmp.mp4")
     command = [
         "ffmpeg",
         "-y",
@@ -239,7 +299,10 @@ def transcode_for_mac(path: Path) -> None:
     ]
     try:
         subprocess.run(command, check=True, capture_output=True, text=True)
-        temp_path.replace(path)
+        temp_path.replace(final_path)
+        if final_path != path:
+            path.unlink(missing_ok=True)
+        return final_path
     except subprocess.CalledProcessError as exc:
         temp_path.unlink(missing_ok=True)
         raise DownloadError(readable_error(exc)) from exc
@@ -288,7 +351,7 @@ def probe_url(
 
     try:
         with yt_dlp.YoutubeDL(options) as ydl:
-            info = ydl.extract_info(url, download=False)
+            info = extract_info_with_retries(ydl, url, download=False)
     except Exception as exc:
         raise DownloadError(readable_error(exc)) from exc
 
@@ -373,14 +436,20 @@ def download_url(
                     output_path=data.get("filename"),
                 )
 
-        selected_format = format_for_quality(quality)
+        selected_format = format_for_url(quality, url)
         entry_urls: list[str] = []
         playlist_info: dict[str, Any] | None = None
         if download_scope == "collection":
             probe_options = ydl_options(cookie_source, download_scope, url=url)
             probe_options["skip_download"] = True
             with yt_dlp.YoutubeDL(probe_options) as ydl:
-                playlist_info = ydl.extract_info(url, download=False)
+                playlist_info = extract_info_with_retries(
+                    ydl,
+                    url,
+                    download=False,
+                    job_id=job_id,
+                    message="解析合集时网络连接中断",
+                )
             destination = collection_output_dir(base_destination, playlist_info.get("title") if playlist_info else None)
             entries = list(playlist_info.get("entries") or []) if playlist_info else []
             for entry in entries:
@@ -421,22 +490,22 @@ def download_url(
                         status="running",
                         message=f"正在下载第 {index}/{len(entry_urls)} 个视频",
                     )
-                    for attempt in range(1, 4):
-                        try:
-                            ydl.extract_info(entry_url, download=True)
-                            break
-                        except Exception:
-                            if attempt == 3:
-                                raise
-                            jobs.update(
-                                job_id,
-                                status="running",
-                                message=f"第 {index}/{len(entry_urls)} 个视频连接中断，正在第 {attempt + 1} 次尝试",
-                            )
-                            time.sleep(attempt * 2)
+                    extract_info_with_retries(
+                        ydl,
+                        entry_url,
+                        download=True,
+                        job_id=job_id,
+                        message=f"第 {index}/{len(entry_urls)} 个视频连接中断",
+                    )
                 output_path = str(destination)
             else:
-                info = ydl.extract_info(url, download=True)
+                info = extract_info_with_retries(
+                    ydl,
+                    url,
+                    download=True,
+                    job_id=job_id,
+                    message="下载视频时网络连接中断",
+                )
                 output_path = ydl.prepare_filename(info)
                 if options.get("merge_output_format"):
                     output_path = str(Path(output_path).with_suffix(".mp4"))
@@ -444,8 +513,9 @@ def download_url(
         include_existing_collection_files = download_scope == "collection" and bool(entry_urls)
         final_paths = sorted(
             path
-            for path in destination.glob("*.mp4")
+            for path in destination.iterdir()
             if path.is_file() and (include_existing_collection_files or path.stat().st_mtime >= started_at - 1)
+            and path.suffix.lower() in VIDEO_EXTENSIONS
         )
         if output_path and Path(output_path).is_file() and Path(output_path) not in final_paths:
             final_paths.append(Path(output_path))
@@ -453,7 +523,7 @@ def download_url(
         if final_paths:
             output_path = str(destination) if download_scope == "collection" else str(final_paths[0])
 
-        for final_path in final_paths:
+        for index, final_path in enumerate(final_paths):
             if not is_mac_playable_mp4(final_path):
                 jobs.update(
                     job_id,
@@ -461,7 +531,10 @@ def download_url(
                     progress=99.0,
                     message="Converting to Mac-compatible H.264 MP4",
                 )
-                transcode_for_mac(final_path)
+                final_paths[index] = transcode_for_mac(final_path)
+
+        if final_paths:
+            output_path = str(destination) if download_scope == "collection" else str(final_paths[0])
 
         jobs.update(
             job_id,
