@@ -26,6 +26,7 @@ DOWNLOAD_PROGRESS_LIMIT = 95.0
 TRANSCODE_PROGRESS_START = 95.0
 TRANSCODE_PROGRESS_END = 99.5
 TRANSCODE_NO_PROGRESS_TIMEOUT_SECONDS = 300
+MAX_DOWNLOAD_ATTEMPTS = 2
 URL_PATTERN = re.compile(r"https?://[^\s，。；、]+")
 TRAILING_URL_PUNCTUATION = ".,;:!?)]}\"'，。；：！？）】」』"
 DEFAULT_HTTP_HEADERS = {
@@ -126,6 +127,12 @@ def format_for_url(quality: str | None, url: str) -> str:
     return format_for_quality(quality)
 
 
+def merge_output_format_for_url(url: str) -> str:
+    if detect_platform(url)["id"] == "youtube":
+        return "mkv"
+    return "mp4"
+
+
 def extract_first_url(value: str) -> str:
     match = URL_PATTERN.search(value.strip())
     if not match:
@@ -186,6 +193,11 @@ def readable_error(exc: BaseException) -> str:
         text = (exc.stderr or exc.output or str(exc)).strip()
     else:
         text = str(exc).strip()
+    if "moov atom not found" in text or "Invalid data found when processing input" in text:
+        return (
+            "下载后的媒体文件不完整或已损坏，工具已避免继续转换这个坏文件。"
+            "请重新点击“开始下载”；如果连续出现，建议选择“读取 Chrome 登录状态”后再试。"
+        )
     if "Unsupported URL" in text:
         return "这个网站或链接格式暂时不支持。"
     if "n challenge solving failed" in text or "Requested format is not available" in text:
@@ -272,6 +284,23 @@ def ffprobe_media_info(path: Path) -> dict[str, Any]:
 
 def ffprobe_streams(path: Path) -> list[dict[str, Any]]:
     return ffprobe_media_info(path).get("streams") or []
+
+
+def is_readable_media_file(path: Path) -> bool:
+    try:
+        ffprobe_media_info(path)
+    except (subprocess.CalledProcessError, json.JSONDecodeError, OSError):
+        return False
+    return True
+
+
+def cleanup_invalid_downloads(paths: list[Path], *, started_at: float) -> None:
+    for path in paths:
+        try:
+            if path.stat().st_mtime >= started_at - 1:
+                path.unlink(missing_ok=True)
+        except OSError:
+            continue
 
 
 def ffprobe_duration(path: Path) -> float | None:
@@ -653,6 +682,7 @@ def download_url(
                 )
 
         selected_format = format_for_url(quality, url)
+        merge_output_format = merge_output_format_for_url(url)
         entry_urls: list[str] = []
         playlist_info: dict[str, Any] | None = None
         if download_scope == "collection":
@@ -682,13 +712,12 @@ def download_url(
 
         destination.mkdir(parents=True, exist_ok=True)
         cleanup_visible_transcode_temps(destination)
-        started_at = time.time()
         options = ydl_options(cookie_source, "single" if entry_urls else download_scope, url=url)
         options.update(
             {
                 "format": selected_format,
                 "outtmpl": str(destination / "%(title).180B [%(id)s].%(ext)s"),
-                "merge_output_format": "mp4",
+                "merge_output_format": merge_output_format,
                 "progress_hooks": [progress_hook],
                 "windowsfilenames": True,
                 "restrictfilenames": False,
@@ -697,47 +726,74 @@ def download_url(
 
         info: dict[str, Any] | None = playlist_info
         output_path = None
-        with yt_dlp.YoutubeDL(options) as ydl:
-            if entry_urls:
-                progress_context["total"] = len(entry_urls)
-                for index, entry_url in enumerate(entry_urls, start=1):
-                    progress_context["index"] = index
-                    if jobs.is_cancel_requested(job_id):
-                        raise DownloadError("任务已停止。")
-                    jobs.update(
-                        job_id,
-                        status="running",
-                        message=f"正在下载第 {index}/{len(entry_urls)} 个视频",
-                    )
-                    extract_info_with_retries(
+        final_paths: list[Path] = []
+        for download_attempt in range(1, MAX_DOWNLOAD_ATTEMPTS + 1):
+            if download_attempt > 1:
+                jobs.update(
+                    job_id,
+                    status="running",
+                    progress=0.0,
+                    message="上一次下载得到半成品文件，已清理并自动重试",
+                    downloaded_bytes=None,
+                    total_bytes=None,
+                    speed=None,
+                    eta=None,
+                )
+            started_at = time.time()
+            output_path = None
+            with yt_dlp.YoutubeDL(options) as ydl:
+                if entry_urls:
+                    progress_context["total"] = len(entry_urls)
+                    for index, entry_url in enumerate(entry_urls, start=1):
+                        progress_context["index"] = index
+                        if jobs.is_cancel_requested(job_id):
+                            raise DownloadError("任务已停止。")
+                        jobs.update(
+                            job_id,
+                            status="running",
+                            message=f"正在下载第 {index}/{len(entry_urls)} 个视频",
+                        )
+                        extract_info_with_retries(
+                            ydl,
+                            entry_url,
+                            download=True,
+                            job_id=job_id,
+                            message=f"第 {index}/{len(entry_urls)} 个视频连接中断",
+                        )
+                    output_path = str(destination)
+                else:
+                    info = extract_info_with_retries(
                         ydl,
-                        entry_url,
+                        url,
                         download=True,
                         job_id=job_id,
-                        message=f"第 {index}/{len(entry_urls)} 个视频连接中断",
+                        message="下载视频时网络连接中断",
                     )
-                output_path = str(destination)
-            else:
-                info = extract_info_with_retries(
-                    ydl,
-                    url,
-                    download=True,
-                    job_id=job_id,
-                    message="下载视频时网络连接中断",
-                )
-                output_path = ydl.prepare_filename(info)
-                if options.get("merge_output_format"):
-                    output_path = str(Path(output_path).with_suffix(".mp4"))
+                    output_path = ydl.prepare_filename(info)
+                    if options.get("merge_output_format"):
+                        output_path = str(Path(output_path).with_suffix(f".{merge_output_format}"))
 
-        include_existing_collection_files = download_scope == "collection" and bool(entry_urls)
-        final_paths = sorted(
-            path
-            for path in destination.iterdir()
-            if path.is_file() and (include_existing_collection_files or path.stat().st_mtime >= started_at - 1)
-            and path.suffix.lower() in VIDEO_EXTENSIONS
-        )
-        if output_path and Path(output_path).is_file() and Path(output_path) not in final_paths:
-            final_paths.append(Path(output_path))
+            include_existing_collection_files = download_scope == "collection" and bool(entry_urls)
+            final_paths = sorted(
+                path
+                for path in destination.iterdir()
+                if path.is_file() and (include_existing_collection_files or path.stat().st_mtime >= started_at - 1)
+                and path.suffix.lower() in VIDEO_EXTENSIONS
+            )
+            if output_path and Path(output_path).is_file() and Path(output_path) not in final_paths:
+                final_paths.append(Path(output_path))
+
+            invalid_paths = [path for path in final_paths if not is_readable_media_file(path)]
+            if invalid_paths and download_attempt < MAX_DOWNLOAD_ATTEMPTS:
+                cleanup_invalid_downloads(invalid_paths, started_at=started_at)
+                continue
+            if invalid_paths:
+                cleanup_invalid_downloads(invalid_paths, started_at=started_at)
+                raise DownloadError(
+                    "下载后的媒体文件不完整或已损坏，已清理本次生成的半成品。"
+                    "请重新点击“开始下载”；如果连续出现，建议选择“读取 Chrome 登录状态”后再试。"
+                )
+            break
 
         if final_paths:
             output_path = str(destination) if download_scope == "collection" else str(final_paths[0])
