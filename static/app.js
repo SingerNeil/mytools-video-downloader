@@ -3,10 +3,14 @@ const cookieSource = document.querySelector("#cookieSource");
 const downloadScope = document.querySelector("#downloadScope");
 const platformHint = document.querySelector("#platformHint");
 const quality = document.querySelector("#quality");
+const compressionTarget = document.querySelector("#compressionTarget");
 const outputDir = document.querySelector("#outputDir");
 const probeBtn = document.querySelector("#probeBtn");
 const downloadBtn = document.querySelector("#downloadBtn");
 const cancelBtn = document.querySelector("#cancelBtn");
+const localVideoInput = document.querySelector("#localVideoInput");
+const localCompressionTarget = document.querySelector("#localCompressionTarget");
+const compressLocalBtn = document.querySelector("#compressLocalBtn");
 const envBadge = document.querySelector("#envBadge");
 const jobState = document.querySelector("#jobState");
 const progressBar = document.querySelector("#progressBar");
@@ -22,7 +26,7 @@ let currentJobId = null;
 
 const stateLabels = {
   queued: "排队中",
-  running: "下载中",
+  running: "处理中",
   completed: "已完成",
   error: "出错",
   canceled: "已停止",
@@ -60,6 +64,8 @@ function writeLog(line) {
 function setBusy(isBusy) {
   probeBtn.disabled = isBusy;
   downloadBtn.disabled = isBusy;
+  compressLocalBtn.disabled = isBusy;
+  localVideoInput.disabled = isBusy;
   cancelBtn.disabled = !isBusy || !currentJobId;
 }
 
@@ -175,6 +181,7 @@ function requestPayload() {
     cookie_source: cookieSource.value,
     download_scope: downloadScope.value,
     quality: quality.value,
+    compression_target_mb: Number(compressionTarget.value),
     output_dir: outputDir.value.trim(),
   };
 }
@@ -252,6 +259,47 @@ async function startDownload() {
   }
 }
 
+async function startLocalCompression() {
+  const file = localVideoInput.files && localVideoInput.files[0];
+  if (!file) {
+    message.textContent = "请先选择一个本地视频文件。";
+    return;
+  }
+
+  setBusy(true);
+  setState("running");
+  updateProgress(0);
+  title.textContent = file.name;
+  savedFile.textContent = "-";
+  message.textContent = "正在读取本地视频，请稍等。";
+  writeLog(`正在读取本地视频：${file.name}`);
+
+  try {
+    await saveOutputDir(true);
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("compression_target_mb", localCompressionTarget.value);
+    formData.append("output_dir", outputDir.value.trim());
+    const response = await fetch("/api/compress-local", {
+      method: "POST",
+      body: formData,
+    });
+    const job = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(job.detail || "本地视频上传失败");
+    }
+    currentJobId = job.id;
+    setBusy(true);
+    writeLog(`本地视频压缩任务已创建：${job.id}`);
+    pollJob(job.id);
+  } catch (error) {
+    message.textContent = error.message;
+    writeLog(`本地视频压缩启动失败：${error.message}`);
+    setState("error");
+    setBusy(false);
+  }
+}
+
 async function cancelDownload() {
   if (!currentJobId) {
     return;
@@ -292,7 +340,7 @@ async function pollJob(jobId) {
 
     if (job.status === "completed") {
       const countText = Array.isArray(job.output_paths) && job.output_paths.length > 1 ? `，共 ${job.output_paths.length} 个文件` : "";
-      writeLog(`下载完成${countText}：${job.output_path || "文件已保存"}`);
+      writeLog(`任务完成${countText}：${job.output_path || "文件已保存"}`);
       currentJobId = null;
       setBusy(false);
       return;
@@ -323,6 +371,7 @@ async function pollJob(jobId) {
 
 probeBtn.addEventListener("click", probe);
 downloadBtn.addEventListener("click", startDownload);
+compressLocalBtn.addEventListener("click", startLocalCompression);
 cancelBtn.addEventListener("click", cancelDownload);
 urlInput.addEventListener("input", applyLinkDefaults);
 urlInput.addEventListener("paste", () => {
