@@ -110,7 +110,7 @@ PYTHON_BIN=/opt/homebrew/bin/python3.12 ./run.sh
 
 ## 抖音下载
 
-本工具可以下载 `douyin.com`、`iesdouyin.com` 和 `amemv.com` 链接，并支持直接粘贴包含抖音短链的分享文本。
+本工具可以下载 `douyin.com`、`iesdouyin.com` 和 `amemv.com` 链接，并支持直接粘贴包含抖音短链的分享文本。对于从“我的喜欢”等页面复制出的 `/user/self?modal_id=...` 链接，工具会自动转换成对应的 `/video/...` 视频地址。
 
 推荐步骤：
 

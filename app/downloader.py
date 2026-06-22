@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import importlib.util
 import json
 import re
@@ -33,6 +34,7 @@ TRANSCODE_NO_PROGRESS_TIMEOUT_SECONDS = 300
 MAX_DOWNLOAD_ATTEMPTS = 2
 URL_PATTERN = re.compile(r"https?://[^\s，。；、]+")
 TRAILING_URL_PUNCTUATION = ".,;:!?)]}\"'，。；：！？）】」』"
+DOUYIN_VIDEO_ID_PATTERN = re.compile(r"^\d{10,}$")
 DEFAULT_HTTP_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -132,9 +134,34 @@ def youtube_format_for_quality(quality: str | None) -> str:
     return "bv*+ba/b"
 
 
+def douyin_format_for_quality(quality: str | None) -> str:
+    selected = normalize_quality(quality)
+    h264_fallback = "b[vcodec^=h264]/b[vcodec^=avc1]/b"
+    if selected == "60fps":
+        return (
+            "b[fps>=50][vcodec^=h264]/"
+            "b[fps>=50][vcodec^=avc1]/"
+            f"{h264_fallback}"
+        )
+    if selected.endswith("p"):
+        short_side = int(selected.removesuffix("p"))
+        long_side = round(short_side * 16 / 9)
+        dimension_filter = f"[width<={long_side}][height<={long_side}]"
+        return (
+            f"b{dimension_filter}[vcodec^=h264]/"
+            f"b{dimension_filter}[vcodec^=avc1]/"
+            f"b{dimension_filter}/"
+            f"{h264_fallback}"
+        )
+    return h264_fallback
+
+
 def format_for_url(quality: str | None, url: str) -> str:
-    if detect_platform(url)["id"] == "youtube":
+    platform_id = detect_platform(url)["id"]
+    if platform_id == "youtube":
         return youtube_format_for_quality(quality)
+    if platform_id == "douyin":
+        return douyin_format_for_quality(quality)
     return format_for_quality(quality)
 
 
@@ -145,23 +172,65 @@ def merge_output_format_for_url(url: str) -> str:
 
 
 def extract_first_url(value: str) -> str:
-    match = URL_PATTERN.search(value.strip())
+    decoded_value = html.unescape(value).replace("\\u0026", "&").strip()
+    match = URL_PATTERN.search(decoded_value)
     if not match:
-        return value.strip()
+        return decoded_value
     return match.group(0).rstrip(TRAILING_URL_PUNCTUATION)
+
+
+def host_matches(host: str, *domains: str) -> bool:
+    hostname = host.split(":", 1)[0].lower().rstrip(".")
+    return any(hostname == domain or hostname.endswith(f".{domain}") for domain in domains)
 
 
 def detect_platform(url: str) -> dict[str, str]:
     host = urlparse(url).netloc.lower()
-    if any(domain in host for domain in ("douyin.com", "iesdouyin.com", "amemv.com")):
+    if host_matches(host, "douyin.com", "iesdouyin.com", "amemv.com"):
         return {"id": "douyin", "label": "抖音"}
-    if any(domain in host for domain in ("bilibili.com", "b23.tv")):
+    if host_matches(host, "bilibili.com", "b23.tv"):
         return {"id": "bilibili", "label": "哔哩哔哩"}
-    if any(domain in host for domain in ("youtube.com", "youtu.be")):
+    if host_matches(host, "youtube.com", "youtu.be"):
         return {"id": "youtube", "label": "YouTube"}
-    if any(domain in host for domain in ("xiaohongshu.com", "xhslink.com")):
+    if host_matches(host, "xiaohongshu.com", "xhslink.com"):
         return {"id": "xiaohongshu", "label": "小红书"}
     return {"id": "generic", "label": "通用链接"}
+
+
+def normalize_douyin_url(url: str) -> str:
+    parsed = urlparse(url)
+    if not host_matches(parsed.netloc, "douyin.com"):
+        return url
+
+    query = {
+        key.removeprefix("amp;").lower(): value
+        for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+    }
+    video_id = next(
+        (
+            query.get(key)
+            for key in ("modal_id", "aweme_id", "item_id")
+            if DOUYIN_VIDEO_ID_PATTERN.fullmatch(query.get(key) or "")
+        ),
+        None,
+    )
+    if not video_id:
+        return url
+
+    return urlunparse(
+        parsed._replace(
+            path=f"/video/{video_id}",
+            params="",
+            query="",
+            fragment="",
+        )
+    )
+
+
+def normalize_platform_url(url: str) -> str:
+    if detect_platform(url)["id"] == "douyin":
+        return normalize_douyin_url(url)
+    return url
 
 
 def validate_url(url: str) -> str:
@@ -169,7 +238,7 @@ def validate_url(url: str) -> str:
     parsed = urlparse(value)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         raise DownloadError("请输入有效的 http 或 https 视频链接。")
-    return value
+    return normalize_platform_url(value)
 
 
 def normalize_url_for_scope(url: str, download_scope: str) -> str:
