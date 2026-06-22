@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+from uuid import uuid4
 
 import yt_dlp
 
@@ -20,11 +21,14 @@ DEFAULT_OUTPUT_DIR = Path.home() / "Downloads" / "MyToolsVideos"
 SUPPORTED_COOKIE_SOURCES = {"none", "chrome"}
 SUPPORTED_DOWNLOAD_SCOPES = {"single", "collection"}
 SUPPORTED_QUALITIES = {"best", "60fps", "2160p", "1440p", "1080p", "720p", "480p", "360p"}
+SUPPORTED_COMPRESSION_TARGETS_MB = {0, 15, 25, 50}
 RESERVED_MAC_FILENAMES = {".", ".."}
 VIDEO_EXTENSIONS = {".mp4", ".m4v", ".mov", ".mkv", ".webm"}
 DOWNLOAD_PROGRESS_LIMIT = 95.0
 TRANSCODE_PROGRESS_START = 95.0
 TRANSCODE_PROGRESS_END = 99.5
+COMPRESSION_PROGRESS_START = 95.0
+COMPRESSION_PROGRESS_END = 99.5
 TRANSCODE_NO_PROGRESS_TIMEOUT_SECONDS = 300
 MAX_DOWNLOAD_ATTEMPTS = 2
 URL_PATTERN = re.compile(r"https?://[^\s，。；、]+")
@@ -99,6 +103,13 @@ def normalize_quality(quality: str | None) -> str:
     selected = quality or "best"
     if selected not in SUPPORTED_QUALITIES:
         raise DownloadError("不支持这个清晰度选项。")
+    return selected
+
+
+def normalize_compression_target(target_mb: int | None) -> int:
+    selected = target_mb or 0
+    if selected not in SUPPORTED_COMPRESSION_TARGETS_MB:
+        raise DownloadError("不支持这个压缩大小选项。")
     return selected
 
 
@@ -308,7 +319,24 @@ def ffprobe_duration(path: Path) -> float | None:
     try:
         value = float(duration)
     except (TypeError, ValueError):
+        value = 0.0
+    if value > 0:
+        return value
+
+    try:
+        result = subprocess.run(
+            ["ffmpeg", "-hide_banner", "-i", str(path)],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except OSError:
         return None
+    match = re.search(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", result.stderr)
+    if not match:
+        return None
+    hours, minutes, seconds = match.groups()
+    value = int(hours) * 3600 + int(minutes) * 60 + float(seconds)
     return value if value > 0 else None
 
 
@@ -356,6 +384,8 @@ def run_ffmpeg_with_progress(
     job_id: str,
     duration: float | None,
     message: str,
+    progress_start: float = TRANSCODE_PROGRESS_START,
+    progress_end: float = TRANSCODE_PROGRESS_END,
 ) -> None:
     process = subprocess.Popen(
         command,
@@ -398,8 +428,8 @@ def run_ffmpeg_with_progress(
                             last_progress_change = time.monotonic()
                         if duration:
                             transcode_percent = max(0.0, min(100.0, media_seconds / duration * 100.0))
-                            progress = TRANSCODE_PROGRESS_START + (
-                                TRANSCODE_PROGRESS_END - TRANSCODE_PROGRESS_START
+                            progress = progress_start + (
+                                progress_end - progress_start
                             ) * transcode_percent / 100.0
                             jobs.update(
                                 job_id,
@@ -411,7 +441,7 @@ def run_ffmpeg_with_progress(
                         jobs.update(
                             job_id,
                             status="running",
-                            progress=TRANSCODE_PROGRESS_END,
+                            progress=progress_end,
                             message=f"{message}（整理文件）",
                         )
 
@@ -474,7 +504,7 @@ def transcode_command(path: Path, temp_path: Path, *, hardware: bool) -> list[st
         "-map",
         "0:v:0",
         "-map",
-        "0:a?",
+        "0:a:0?",
         *encoder_args,
         "-pix_fmt",
         "yuv420p",
@@ -548,6 +578,223 @@ def transcode_for_mac(path: Path, job_id: str) -> Path:
     except Exception:
         temp_path.unlink(missing_ok=True)
         raise
+
+
+def upload_compression_command(path: Path, output_path: Path, *, duration: float, target_mb: int) -> list[str]:
+    target_bits = target_mb * 1024 * 1024 * 8 * 0.88
+    total_bitrate = int(target_bits / duration)
+    audio_bitrate = 64_000 if total_bitrate < 600_000 else 96_000
+    video_bitrate = total_bitrate - audio_bitrate
+    if video_bitrate < 120_000:
+        raise DownloadError(
+            f"视频时长较长，无法压缩到约 {target_mb} MB。"
+            "请选择更大的目标大小，或先下载较短的视频。"
+        )
+
+    return [
+        "ffmpeg",
+        "-y",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-nostats",
+        "-stats_period",
+        "1",
+        "-i",
+        str(path),
+        "-map",
+        "0:v:0",
+        "-map",
+        "0:a:0?",
+        "-vf",
+        "scale=w='min(iw,1280)':h='min(ih,720)':force_original_aspect_ratio=decrease:force_divisible_by=2",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-b:v",
+        str(video_bitrate),
+        "-maxrate",
+        str(int(video_bitrate * 1.15)),
+        "-bufsize",
+        str(video_bitrate * 2),
+        "-pix_fmt",
+        "yuv420p",
+        "-c:a",
+        "aac",
+        "-b:a",
+        str(audio_bitrate),
+        "-movflags",
+        "+faststart",
+        "-progress",
+        "pipe:1",
+        str(output_path),
+    ]
+
+
+def compress_for_upload(path: Path, target_mb: int, job_id: str) -> Path:
+    target_mb = normalize_compression_target(target_mb)
+    if target_mb == 0:
+        return path
+    if not ffmpeg_available():
+        raise DownloadError("需要 ffmpeg 才能生成适合上传的小文件。")
+
+    target_bytes = target_mb * 1024 * 1024
+    if path.stat().st_size <= target_bytes:
+        return path
+
+    duration = ffprobe_duration(path)
+    if not duration:
+        raise DownloadError("无法读取视频时长，因此不能按目标大小压缩。")
+
+    output_path = path.with_name(f"{path.stem} [适合上传-{target_mb}MB].mp4")
+    temp_dir = path.parent / ".mytools_tmp"
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    temp_path = temp_dir / f"{path.stem}.upload-{target_mb}mb.tmp.mp4"
+    temp_path.unlink(missing_ok=True)
+    message = f"正在压缩为约 {target_mb} MB 的上传版"
+
+    try:
+        jobs.update(
+            job_id,
+            status="running",
+            progress=COMPRESSION_PROGRESS_START,
+            message=f"{message}（原始视频会保留）",
+            output_path=str(output_path),
+        )
+        run_ffmpeg_with_progress(
+            upload_compression_command(path, temp_path, duration=duration, target_mb=target_mb),
+            job_id=job_id,
+            duration=duration,
+            message=message,
+        )
+        temp_path.replace(output_path)
+        jobs.update(
+            job_id,
+            status="running",
+            progress=COMPRESSION_PROGRESS_END,
+            message=f"{message}（整理文件）",
+            output_path=str(output_path),
+        )
+        return output_path
+    except subprocess.CalledProcessError as exc:
+        temp_path.unlink(missing_ok=True)
+        raise DownloadError(readable_error(exc)) from exc
+    except Exception:
+        temp_path.unlink(missing_ok=True)
+        raise
+
+
+def available_output_path(path: Path) -> Path:
+    if not path.exists():
+        return path
+    for index in range(2, 1000):
+        candidate = path.with_name(f"{path.stem} ({index}){path.suffix}")
+        if not candidate.exists():
+            return candidate
+    raise DownloadError("同名压缩文件太多，请清理保存目录后再试。")
+
+
+def compress_local_video(
+    *,
+    job_id: str,
+    source_path: Path,
+    original_name: str,
+    target_mb: int,
+    output_dir: str | None,
+) -> None:
+    try:
+        target_mb = normalize_compression_target(target_mb)
+        if target_mb == 0:
+            raise DownloadError("本地视频压缩必须选择一个目标大小。")
+        if not ffmpeg_available():
+            raise DownloadError("需要 ffmpeg 才能压缩本地视频。")
+        if not is_readable_media_file(source_path):
+            raise DownloadError("这个文件不是可读取的视频，或视频文件已经损坏。")
+
+        destination = safe_output_dir(output_dir)
+        destination.mkdir(parents=True, exist_ok=True)
+        original_path = Path(original_name)
+        safe_stem = safe_path_name(original_path.stem, fallback="本地视频")
+        output_path = available_output_path(
+            destination / f"{safe_stem} [适合上传-{target_mb}MB].mp4"
+        )
+        target_bytes = target_mb * 1024 * 1024
+
+        jobs.update(
+            job_id,
+            status="running",
+            progress=0.0,
+            title=original_name,
+            message="本地视频已接收，正在分析",
+        )
+
+        if source_path.stat().st_size <= target_bytes and is_mac_playable_mp4(source_path):
+            shutil.copy2(source_path, output_path)
+            jobs.update(
+                job_id,
+                status="completed",
+                progress=100.0,
+                output_path=str(output_path),
+                output_paths=[str(output_path)],
+                message="本地视频已经小于目标大小，已复制到保存位置",
+            )
+            return
+
+        duration = ffprobe_duration(source_path)
+        if not duration:
+            raise DownloadError("无法读取视频时长，因此不能按目标大小压缩。")
+
+        temp_dir = destination / ".mytools_tmp"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        temp_path = temp_dir / f"{uuid4().hex}.local-compress.tmp.mp4"
+        message = f"正在压缩本地视频为约 {target_mb} MB"
+        jobs.update(
+            job_id,
+            status="running",
+            progress=0.0,
+            message=message,
+            output_path=str(output_path),
+        )
+        try:
+            run_ffmpeg_with_progress(
+                upload_compression_command(
+                    source_path,
+                    temp_path,
+                    duration=duration,
+                    target_mb=target_mb,
+                ),
+                job_id=job_id,
+                duration=duration,
+                message=message,
+                progress_start=0.0,
+                progress_end=99.5,
+            )
+            temp_path.replace(output_path)
+        except Exception:
+            temp_path.unlink(missing_ok=True)
+            raise
+
+        jobs.update(
+            job_id,
+            status="completed",
+            progress=100.0,
+            output_path=str(output_path),
+            output_paths=[str(output_path)],
+            message="本地视频压缩完成",
+        )
+    except Exception as exc:
+        if jobs.is_cancel_requested(job_id) or str(exc).strip() == "任务已停止。":
+            jobs.update(job_id, status="canceled", error=None, message="任务已停止")
+            return
+        jobs.update(
+            job_id,
+            status="error",
+            error=readable_error(exc),
+            message="本地视频压缩失败",
+        )
+    finally:
+        shutil.rmtree(source_path.parent, ignore_errors=True)
 
 
 def ydl_options(
@@ -624,12 +871,14 @@ def download_url(
     cookie_source: str | None,
     download_scope: str | None,
     quality: str | None,
+    compression_target_mb: int | None,
     output_dir: str | None,
 ) -> None:
     try:
         url = validate_url(url)
         cookie_source = normalize_cookie_source(cookie_source)
         download_scope = normalize_download_scope(download_scope)
+        compression_target_mb = normalize_compression_target(compression_target_mb)
         url = normalize_url_for_scope(url, download_scope)
         base_destination = safe_output_dir(output_dir)
 
@@ -807,6 +1056,10 @@ def download_url(
                     message="正在转换为 Mac 可播放 MP4",
                 )
                 final_paths[index] = transcode_for_mac(final_path, job_id)
+
+        if compression_target_mb:
+            for index, final_path in enumerate(final_paths):
+                final_paths[index] = compress_for_upload(final_path, compression_target_mb, job_id)
 
         if final_paths:
             output_path = str(destination) if download_scope == "collection" else str(final_paths[0])

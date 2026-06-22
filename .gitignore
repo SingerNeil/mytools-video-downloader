@@ -3,4 +3,5 @@ __pycache__/
 *.py[cod]
 .DS_Store
 downloads/
+.mytools_uploads/
 user_settings.json

@@ -69,6 +69,17 @@
         </div>
 
         <label class="field">
+          <span>上传压缩</span>
+          <select id="compressionTarget">
+            <option value="0">不压缩（保留原始大小）</option>
+            <option value="50">约 50 MB</option>
+            <option value="25">约 25 MB（推荐上传 GPT）</option>
+            <option value="15">约 15 MB（更小，画质较低）</option>
+          </select>
+          <small class="hint">选择后会额外生成一个 720P H.264 小文件，原始视频仍会保留。</small>
+        </label>
+
+        <label class="field">
           <span>保存位置</span>
           <input id="outputDir" type="text" />
         </label>
@@ -77,6 +88,30 @@
           <button id="probeBtn" type="button">检测链接</button>
           <button id="downloadBtn" type="button" class="primary">开始下载</button>
           <button id="cancelBtn" type="button" class="danger" disabled>停止任务</button>
+        </div>
+
+        <div class="local-compress">
+          <div>
+            <h2>压缩本地视频</h2>
+            <p class="section-copy">选择电脑里的视频，压缩结果会保存到上面的“保存位置”，原文件不会改动。</p>
+          </div>
+          <label class="field">
+            <span>本地视频文件</span>
+            <input id="localVideoInput" type="file" accept="video/mp4,video/quicktime,video/x-m4v,video/x-matroska,video/webm,.mp4,.mov,.m4v,.mkv,.webm" />
+          </label>
+          <div class="grid">
+            <label class="field">
+              <span>目标大小</span>
+              <select id="localCompressionTarget">
+                <option value="50">约 50 MB</option>
+                <option value="25" selected>约 25 MB（推荐上传 GPT）</option>
+                <option value="15">约 15 MB（更小，画质较低）</option>
+              </select>
+            </label>
+            <div class="local-action">
+              <button id="compressLocalBtn" type="button" class="primary">压缩本地视频</button>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -93,7 +128,7 @@
         <dl id="details" class="details">
           <div>
             <dt>提示</dt>
-            <dd id="message">粘贴视频链接后，可以先检测链接，也可以直接开始下载。</dd>
+            <dd id="message">可以粘贴链接下载，也可以选择本地视频直接压缩。</dd>
           </div>
           <div>
             <dt>标题</dt>

@@ -97,6 +97,12 @@ dt {
   font-weight: 700;
 }
 
+.hint {
+  color: #71848a;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 input,
 select,
 button {
@@ -135,6 +141,29 @@ select:focus {
 .actions {
   justify-content: flex-start;
   margin-top: 20px;
+}
+
+.local-compress {
+  margin-top: 24px;
+  border-top: 1px solid #dfe6e8;
+  padding-top: 22px;
+}
+
+.section-copy {
+  margin: 7px 0 0;
+  color: #71848a;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.local-action {
+  display: flex;
+  align-items: flex-end;
+}
+
+.local-action button {
+  width: 100%;
+  min-height: 42px;
 }
 
 button {
