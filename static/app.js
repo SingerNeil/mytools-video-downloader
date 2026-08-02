@@ -13,10 +13,16 @@ const localCompressionTarget = document.querySelector("#localCompressionTarget")
 const compressLocalBtn = document.querySelector("#compressLocalBtn");
 const envBadge = document.querySelector("#envBadge");
 const jobState = document.querySelector("#jobState");
+const progressTrack = document.querySelector("#progressTrack");
 const progressBar = document.querySelector("#progressBar");
+const progressValue = document.querySelector("#progressValue");
 const message = document.querySelector("#message");
 const title = document.querySelector("#title");
 const savedFile = document.querySelector("#savedFile");
+const detectedPlatform = document.querySelector("#detectedPlatform");
+const pasteBtn = document.querySelector("#pasteBtn");
+const copyPathBtn = document.querySelector("#copyPathBtn");
+const localFileName = document.querySelector("#localFileName");
 const log = document.querySelector("#log");
 const bilibiliAuthPanel = document.querySelector("#bilibiliAuthPanel");
 const bilibiliAuthStatus = document.querySelector("#bilibiliAuthStatus");
@@ -69,21 +75,42 @@ function writeLog(line) {
 }
 
 function setBusy(isBusy) {
+  document.body.classList.toggle("is-busy", isBusy);
   probeBtn.disabled = isBusy;
   downloadBtn.disabled = isBusy;
   compressLocalBtn.disabled = isBusy;
   localVideoInput.disabled = isBusy;
   cancelBtn.disabled = !isBusy || !currentJobId;
+  cancelBtn.hidden = !isBusy || !currentJobId;
 }
 
 function setState(state) {
-  jobState.textContent = stateLabels[state] || state;
   jobState.className = `state ${state}`;
+  const dot = document.createElement("span");
+  dot.className = "state-dot";
+  jobState.replaceChildren(dot, document.createTextNode(stateLabels[state] || state));
 }
 
 function updateProgress(value) {
   const progress = Math.max(0, Math.min(100, Number(value) || 0));
   progressBar.style.width = `${progress}%`;
+  progressValue.textContent = `${Math.round(progress)}%`;
+  progressTrack.setAttribute("aria-valuenow", String(Math.round(progress)));
+}
+
+function setSavedFile(value) {
+  const normalized = value && value !== "-" ? value : "";
+  savedFile.textContent = normalized || "任务完成后会显示在这里";
+  copyPathBtn.hidden = !normalized;
+}
+
+function renderDetectedPlatform(platform) {
+  const isWaiting = platform === "waiting";
+  detectedPlatform.className = `platform-status ${platform}`;
+  const dot = document.createElement("span");
+  dot.className = "platform-status-dot";
+  const label = isWaiting ? "等待粘贴链接" : `已识别为 ${platformLabels[platform] || "通用链接"}`;
+  detectedPlatform.replaceChildren(dot, document.createTextNode(label));
 }
 
 function showBilibiliAuthPanel() {
@@ -213,6 +240,7 @@ function applyLinkDefaults() {
   const rawValue = urlInput.value.trim();
   if (!rawValue) {
     platformHint.value = "waiting";
+    renderDetectedPlatform("waiting");
     lastLinkDefaultsKey = "";
     return;
   }
@@ -223,6 +251,7 @@ function applyLinkDefaults() {
     parsedUrl = new URL(firstUrl);
   } catch {
     platformHint.value = "waiting";
+    renderDetectedPlatform("waiting");
     return;
   }
 
@@ -230,6 +259,7 @@ function applyLinkDefaults() {
   const recommendedScope = detectRecommendedScope(parsedUrl, platform);
   const nextKey = `${platform}:${recommendedScope}:${firstUrl}`;
   platformHint.value = platform;
+  renderDetectedPlatform(platform);
   downloadScope.value = recommendedScope;
 
   if (platform === "douyin" && cookieSource.value !== "none") {
@@ -310,8 +340,8 @@ async function probe() {
   updateProgress(0);
   try {
     const data = await api("/api/probe", payload);
-    title.textContent = data.title || "-";
-    savedFile.textContent = "-";
+    title.textContent = data.title || "尚未检测";
+    setSavedFile("");
     const scopeText = data.download_scope === "collection" ? `，合集/列表内检测到 ${data.entry_count || 0} 个条目` : "";
     const platformText = data.platform && data.platform.label ? `${data.platform.label}，` : "";
     message.textContent = `检测成功：${platformText}${data.extractor || "解析器"} 找到 ${data.format_count || 0} 个可用格式${scopeText}。`;
@@ -338,7 +368,7 @@ async function startDownload() {
 
   setBusy(true);
   updateProgress(0);
-  savedFile.textContent = "-";
+  setSavedFile("");
   try {
     await saveOutputDir(true);
     const job = await api("/api/download", payload);
@@ -365,7 +395,7 @@ async function startLocalCompression() {
   setState("running");
   updateProgress(0);
   title.textContent = file.name;
-  savedFile.textContent = "-";
+  setSavedFile("");
   message.textContent = "正在读取本地视频，请稍等。";
   writeLog(`正在读取本地视频：${file.name}`);
 
@@ -427,11 +457,10 @@ async function pollJob(jobId) {
     updateProgress(job.progress);
     message.textContent = job.error || messageLabels[job.message] || stateLabels[job.status] || job.message || job.status;
     title.textContent = job.title || title.textContent || "-";
-    if (Array.isArray(job.output_paths) && job.output_paths.length > 1) {
-      savedFile.textContent = job.output_paths.join("\n");
-    } else {
-      savedFile.textContent = job.output_path || "-";
-    }
+    const outputValue = Array.isArray(job.output_paths) && job.output_paths.length > 1
+      ? job.output_paths.join("\n")
+      : job.output_path || "";
+    setSavedFile(outputValue);
 
     if (job.status === "completed") {
       const countText = Array.isArray(job.output_paths) && job.output_paths.length > 1 ? `，共 ${job.output_paths.length} 个文件` : "";
@@ -468,11 +497,38 @@ probeBtn.addEventListener("click", probe);
 downloadBtn.addEventListener("click", startDownload);
 compressLocalBtn.addEventListener("click", startLocalCompression);
 cancelBtn.addEventListener("click", cancelDownload);
+pasteBtn.addEventListener("click", async () => {
+  try {
+    const clipboardText = await navigator.clipboard.readText();
+    if (clipboardText) {
+      urlInput.value = clipboardText;
+      applyLinkDefaults();
+      urlInput.focus();
+    }
+  } catch {
+    urlInput.focus();
+    message.textContent = "请按 Ctrl+V（Windows）或 Command+V（macOS）粘贴链接。";
+  }
+});
+copyPathBtn.addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(savedFile.textContent);
+    copyPathBtn.textContent = "已复制";
+    window.setTimeout(() => { copyPathBtn.textContent = "复制路径"; }, 1600);
+  } catch {
+    message.textContent = "无法自动复制，请手动选择上方路径。";
+  }
+});
 bilibiliLoginBtn.addEventListener("click", startBilibiliLogin);
 bilibiliLogoutBtn.addEventListener("click", () => {
   logoutBilibili().catch((error) => writeLog(error.message));
 });
 cookieSource.addEventListener("change", showBilibiliAuthPanel);
+localVideoInput.addEventListener("change", () => {
+  const file = localVideoInput.files && localVideoInput.files[0];
+  localFileName.textContent = file ? file.name : "选择一个视频文件";
+  localVideoInput.closest(".file-picker").classList.toggle("has-file", Boolean(file));
+});
 urlInput.addEventListener("input", applyLinkDefaults);
 urlInput.addEventListener("paste", () => {
   window.setTimeout(applyLinkDefaults, 0);
@@ -492,3 +548,4 @@ loadHealth().catch((error) => {
   writeLog(error.message);
 });
 showBilibiliAuthPanel();
+renderDetectedPlatform("waiting");
