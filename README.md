@@ -1,109 +1,171 @@
-# MyTools 视频下载与压缩工具
+# MyTools Video Downloader
 
-一个可在 Windows、macOS 和 Linux 本地运行的中文网页工具。粘贴视频链接或分享文本后，可以检测链接、选择清晰度、下载单个视频或整个合集，并将结果保存到本地。
+一个运行在本机的中文视频下载与压缩工具。它提供简单的网页界面，支持粘贴视频链接或整段分享文案，能够下载单个视频、播放列表和 B 站多 P/合集，并将结果转换成 Windows 与 macOS 都容易播放的 MP4 文件。
 
-下载引擎使用 [`yt-dlp`](https://github.com/yt-dlp/yt-dlp)，目前针对以下平台提供支持：
+目前重点适配：
 
-- YouTube
 - 哔哩哔哩
-- 小红书
+- YouTube
 - 抖音
-- 其他 `yt-dlp` 可以解析的视频网站
+- 小红书
+- 其他能够被 [`yt-dlp`](https://github.com/yt-dlp/yt-dlp) 解析的网站
 
-网站页面和风控规则会变化，因此除 YouTube、哔哩哔哩等常用场景外，其余平台均属于尽力支持。
+> 请只下载你有权访问和保存的内容，并遵守网站规则及所在地法律。DRM 保护、地区限制、已失效或账号无权访问的内容无法通过本工具绕过限制。
 
-## 主要功能
+## 最快开始
 
-- 自动从分享文本中提取第一个视频链接。
-- 自动识别 YouTube、哔哩哔哩、小红书和抖音链接。
-- 自动判断普通单视频、YouTube 播放列表和 B 站多 P/合集链接。
-- 支持仅下载当前视频或下载整个合集/列表。
-- 支持最高画质、优先 60 帧、8K、4K、2K、1080P、720P、480P 和 360P。
-- 支持 B 站扫码登录，也可以读取 Firefox 或 Chrome 登录状态，下载当前账号有权限观看的内容。
-- YouTube 最高画质会优先选择真实的 2K/4K 视频流。
-- 自动将 AV1、VP9、WebM、MKV 等格式转换为 Windows 和 macOS 均可直接播放的 H.264/AAC MP4。
-- YouTube 使用 MKV 作为中间合并容器，避免直接合并 4K MP4 时生成损坏文件。
-- 下载失败时支持网络重试、坏文件检测和半成品清理。
-- 页面显示下载、合并、转码和压缩进度，并支持停止当前任务。
-- 下载后可以额外生成约 50 MB、25 MB 或 15 MB 的 720P 上传版。
-- 可以直接选择电脑中的视频进行压缩，原始文件不会被修改。
-- 自动记住上一次使用的保存目录。
-- 下载合集时自动建立以合集标题命名的子文件夹。
+### Windows 10/11
 
-## 环境要求
-
-- Windows 10/11（x64），或 macOS（Apple Silicon / Intel）；Linux 也可使用
-- Python 3.10 或更高版本，推荐 Python 3.12
-- `ffmpeg` 和 `ffprobe`
-- Node.js 22 或更高版本，用于 YouTube 页面解析
-- Firefox 或 Chrome，可选；需要读取网站登录状态时使用。Windows 推荐 Firefox
-
-### Windows 安装环境
-
-打开 PowerShell 或 Windows Terminal：
+先打开 PowerShell 或 Windows Terminal 安装运行环境：
 
 ```powershell
 winget install --id Python.Python.3.12 --exact
 winget install --id Gyan.FFmpeg --exact
 winget install --id OpenJS.NodeJS.LTS --exact
-winget install --id Mozilla.Firefox --exact
 ```
 
-安装后关闭并重新打开终端，使新的 `PATH` 生效。不要使用 Microsoft Store 的空 `python.exe` 占位程序；`run.bat` 会优先使用官方 Python 的 `py` 启动器。
-
-### macOS 安装环境
-
-```bash
-brew install python@3.12 ffmpeg node
-```
-
-Windows 和 macOS 都可以用以下命令确认核心工具（Windows 上 Python 也可运行 `py -3.12 --version`）：
-
-```bash
-python3.12 --version
-ffmpeg -version
-ffprobe -version
-node --version
-```
-
-## 第一次启动
-
-### Windows
-
-在资源管理器中双击 `run.bat`，或在 PowerShell 中进入项目目录后运行：
+安装完成后关闭并重新打开终端，然后执行：
 
 ```powershell
+git clone https://github.com/SingerNeil/mytools-video-downloader.git
+cd mytools-video-downloader
 .\run.bat
 ```
 
-`run.bat` 会调用 `run.ps1`，自动寻找 Python 3.10+、创建 Windows 虚拟环境、安装依赖并启动服务。即使系统 PowerShell 执行策略较严格，也不需要手动修改全局执行策略。
+也可以下载 GitHub ZIP，解压后直接双击 `run.bat`。
 
-### macOS / Linux
+### macOS
 
-在终端进入项目目录后运行：
+先安装 [Homebrew](https://brew.sh/)，然后执行：
 
 ```bash
+brew install python@3.12 ffmpeg node
+git clone https://github.com/SingerNeil/mytools-video-downloader.git
+cd mytools-video-downloader
+chmod +x run.sh
 ./run.sh
 ```
 
-两个平台的启动脚本都会自动完成以下工作：
+### Linux
 
-1. 选择可用的 Python。
-2. 创建或复用项目中的 `.venv` 虚拟环境。
-3. 安装 `requirements.txt` 中的依赖。
-4. 在 `127.0.0.1:8765` 启动本地服务。
+使用系统包管理器安装 Python 3.10+、ffmpeg、ffprobe 和 Node.js 22+，然后执行：
 
-启动成功后，在浏览器打开：
+```bash
+git clone https://github.com/SingerNeil/mytools-video-downloader.git
+cd mytools-video-downloader
+chmod +x run.sh
+./run.sh
+```
+
+启动脚本会自动创建 `.venv`、安装或更新 Python 依赖，并在本机启动服务。看到下面的地址后，用浏览器打开它：
 
 ```text
 http://127.0.0.1:8765
 ```
 
-如需指定 Python：
+保持启动窗口运行。需要停止服务时，在该窗口按 `Ctrl+C`。
 
-```bash
-PYTHON_BIN=/opt/homebrew/bin/python3.12 ./run.sh
+## 下载 B 站最高画质
+
+B 站的 1080P 高码率、4K、8K、HDR、杜比等画质是否可用，取决于视频提供的格式以及登录账号本身的观看权限。未登录时通常只能取得公开视频画质。
+
+推荐使用工具内置的扫码登录：
+
+1. 启动工具并打开网页。
+2. 在“登录状态”中选择“扫码登录 B 站（最高画质推荐）”。
+3. 点击“生成登录二维码”。
+4. 使用哔哩哔哩手机客户端扫码并在手机上确认。
+5. 页面显示账号昵称和会员状态后，粘贴 B 站视频链接。
+6. 选择“最高可用画质”。
+7. 点击“检测链接”，确认识别结果后开始下载。
+
+扫码登录的 Cookie：
+
+- 只保存在当前 Python 进程的内存中；
+- 不会写入 `user_settings.json` 或其他 Cookie 文件；
+- 不会通过登录状态接口返回给网页；
+- 仅作用于 `bilibili.com` 及其 API 子域；
+- 点击退出登录或停止工具后立即失效。
+
+如果不想扫码，也可以选择读取 Firefox 或 Chrome 的现有登录状态。Windows 推荐 Firefox；Chrome 在 Windows 上经常锁定 Cookie 数据库，如需读取 Chrome 登录状态，请先彻底退出 Chrome，包括任务管理器中的后台 `chrome.exe`。
+
+## 基本使用
+
+1. 粘贴视频网址或带网址的分享文案。
+2. 工具会自动提取第一个有效链接并识别平台。
+3. 选择登录状态、下载范围、画质、上传压缩大小和保存位置。
+4. 点击“检测链接”查看标题与解析结果。
+5. 点击“开始下载”。
+6. 等待状态变为“已完成”，在页面显示的保存位置查看文件。
+
+页面中的“停止任务”只停止当前下载或转码任务，不会关闭本地服务。
+
+### 下载范围
+
+- `仅下载当前视频`：适合普通单视频链接。
+- `下载整个合集/列表`：适合 YouTube 播放列表、B 站多 P、B 站合集，以及解析器支持的其他列表。
+
+合集会自动保存在以合集标题命名的子目录中。
+
+### 画质选项
+
+- `最高可用画质`：选择当前链接与账号权限下可获得的最高视频和音频流。
+- `优先 60 帧`：优先选择 50 FPS 以上的视频流，不存在时自动回退。
+- `4320P / 8K`、`2160P / 4K`、`1440P / 2K`：限制最高视频高度。
+- `1080P`、`720P`、`480P`、`360P`：适合控制文件大小和处理时间。
+
+高画质网站通常将视频流和音频流分开提供。工具会自动下载、合并，并在需要时转换为 H.264/AAC MP4：
+
+- macOS 优先尝试 VideoToolbox 硬件编码，失败后回退到 `libx264`；
+- Windows 和 Linux 默认使用兼容性稳定的 `libx264`；
+- 高分辨率或长视频的合并与转码可能明显慢于下载过程。
+
+### 抖音与小红书
+
+可以直接粘贴分享文案，无需手动提取其中的短链接。抖音 `/user/self?modal_id=...` 链接会自动转换为对应的视频地址。
+
+公开内容优先选择“不使用登录状态”。遇到需要登录或平台风控时，可先在浏览器中登录对应网站，再选择 Firefox 或 Chrome 登录状态重试。网站接口会变化，某些链接可能需要等待新版 `yt-dlp` 支持。
+
+## 视频压缩
+
+### 下载后生成上传版
+
+下载时可以选择额外生成约 50 MB、25 MB 或 15 MB 的上传版：
+
+- 原始下载文件仍会保留；
+- 额外生成最高 720P 的 H.264/AAC MP4；
+- 文件名会带有 `[适合上传-目标大小MB]`；
+- 目标大小是估算值，实际结果可能略有差异。
+
+### 压缩本地文件
+
+网页下方可以选择本机的 MP4、MOV、M4V、MKV 或 WEBM 文件进行压缩。处理结果保存到当前设置的下载目录，原始文件不会被修改。
+
+## 保存位置
+
+默认目录：
+
+```text
+Windows: C:\Users\<用户名>\Downloads\MyToolsVideos
+macOS:   /Users/<用户名>/Downloads/MyToolsVideos
+Linux:   /home/<用户名>/Downloads/MyToolsVideos
 ```
+
+在页面中修改保存位置后，工具会在项目根目录创建 `user_settings.json`。该文件只记录本机下载目录，已经被 `.gitignore` 排除，不会提交到 Git。
+
+Windows 文件名中的保留字符及 `CON`、`NUL`、`LPT1` 等系统保留名称会被自动清理。
+
+## 启动脚本做了什么
+
+Windows 的 `run.bat` 会调用 `run.ps1`；macOS/Linux 使用 `run.sh`。脚本会：
+
+1. 检查 Python 版本是否至少为 3.10；
+2. 创建或复用当前系统的 `.venv`；
+3. 根据 `requirements.txt` 安装或更新依赖；
+4. 检查 ffmpeg、ffprobe 和 Node.js；
+5. 使用 Uvicorn 启动 FastAPI 服务。
+
+如果电脑上有多个 Python，可以显式指定解释器。
 
 Windows PowerShell：
 
@@ -112,186 +174,35 @@ $env:PYTHON_BIN = "C:\Path\To\Python312\python.exe"
 .\run.bat
 ```
 
-## 日常使用 SOP
+macOS/Linux：
 
-1. 打开终端。
-2. 进入项目目录并启动：Windows 运行 `run.bat`，macOS/Linux 运行 `./run.sh`。
-3. 保持终端窗口运行，不要关闭。
-4. 浏览器访问 `http://127.0.0.1:8765`。
-5. 粘贴视频链接或整段分享文本。
-6. 检查页面自动识别的平台和下载范围。
-7. 根据需要设置：
-   - 登录状态
-   - 单视频或整个合集
-   - 下载清晰度
-   - 是否额外生成上传压缩版
-   - 保存位置
-8. 可以先点击“检测链接”，确认标题和解析器。
-9. 点击“开始下载”。
-10. 等待页面显示“已完成”，然后到“保存文件”显示的目录查看结果。
-
-需要停止当前任务时，点击页面中的“停止任务”。停止整个本地服务时，在启动服务的终端按 `Ctrl+C`（macOS 也可理解为 `Control+C`）。
-
-## 抖音下载
-
-本工具可以下载 `douyin.com`、`iesdouyin.com` 和 `amemv.com` 链接，并支持直接粘贴包含抖音短链的分享文本。对于从“我的喜欢”等页面复制出的 `/user/self?modal_id=...` 链接，工具会自动转换成对应的 `/video/...` 视频地址。
-
-推荐步骤：
-
-1. 在抖音中复制视频分享链接或整段分享文案。
-2. 直接粘贴到“视频链接”输入框。
-3. 确认“链接来源”自动显示为“抖音”。
-4. 普通公开视频先选择“不使用登录状态”。
-5. 检测成功后开始下载。
-
-如果短链、私密内容或风控页面无法解析：
-
-1. 先在 Chrome 中登录抖音。
-2. 回到工具，选择对应浏览器的登录状态；Windows 推荐 Firefox。
-3. 重新检测并下载。
-
-抖音页面和接口变化较频繁，个别链接可能需要更新 `yt-dlp` 后才能继续使用。
-
-## 下载范围
-
-### 仅下载当前视频
-
-只下载输入链接直接指向的视频。普通抖音、小红书和单个 YouTube/B站视频会自动选择这个模式。
-
-### 下载整个合集/列表
-
-适用于：
-
-- YouTube 播放列表
-- B站多 P 视频
-- B站合集或列表
-- 其他解析器能够返回多个条目的链接
-
-合集文件会保存到：
-
-```text
-保存目录/合集标题/
+```bash
+PYTHON_BIN=/path/to/python3.12 ./run.sh
 ```
 
-## 清晰度
+## 更新项目
 
-- `最高可用画质`：选择当前链接和账号权限可以获得的最高画质。
-- `优先 60 帧`：优先选择 50 FPS 以上的视频流，没有时回退到其他最高画质。
-- `4320P / 8K`：最高限制为 4320P；仅在视频本身提供且当前账号有权限时可用。
-- `2160P / 4K`：最高限制为 2160P。
-- `1440P / 2K`：最高限制为 1440P。
-- `1080P`、`720P`、`480P`、`360P`：限制最高视频高度。
+如果使用 Git clone：
 
-YouTube 的 2K/4K 通常是视频流和音频流分开下载，并可能使用 AV1、VP9 或 Opus。工具会先用 MKV 合并，再转换为 Windows 和 macOS 均兼容的 H.264/AAC MP4。macOS 会优先尝试 VideoToolbox 硬件编码，失败后回退到 libx264；Windows/Linux 默认使用兼容性稳定的 libx264。长视频的转换阶段可能需要较长时间，页面会持续显示进度。
-
-会员画质和登录后内容取决于账号本身的观看权限。
-
-## B 站扫码登录与浏览器登录状态
-
-下载 B 站会员画质时，推荐在页面的“登录状态”中选择“扫码登录 B 站（最高画质推荐）”：
-
-1. 点击“生成登录二维码”。
-2. 使用哔哩哔哩手机客户端扫码并确认登录。
-3. 页面显示账号昵称后，选择“最高可用画质”并开始下载。
-
-扫码获得的 Cookie 只保存在当前 Python 进程的内存中，不会写入配置文件，也不会通过状态接口返回；退出登录或停止工具后会清除。下载画质仍取决于视频本身以及该账号的会员和观看权限。
-
-工具不会保存用户名或密码。“读取浏览器登录状态”会让 `yt-dlp` 读取当前电脑上对应浏览器的网站 Cookie。
-
-Windows 推荐使用 Firefox：
-
-1. 安装并打开 Firefox。
-2. 在 Firefox 中登录哔哩哔哩，确认网页能播放账号有权限观看的最高画质。
-3. 回到工具，选择“读取 Firefox 登录状态（Windows 推荐）”。
-4. 检测链接并选择“最高可用画质”后下载。
-
-如果使用 Chrome，Windows 上必须先完全退出 Chrome，包括任务管理器中的后台 `chrome.exe`；否则 Chrome 会锁定 Cookie 数据库。macOS 通常可以直接读取 Chrome Cookie，但可能弹出钥匙串授权。
-
-使用前：
-
-1. 在 Firefox 或 Chrome 中登录目标网站。
-2. 保持登录状态有效。
-3. 在工具中选择对应浏览器的登录状态。
-
-当公开链接能够正常下载时，优先使用“不使用登录状态”。
-
-## 视频压缩
-
-### 下载后生成上传版
-
-“上传压缩”支持：
-
-- 不压缩
-- 约 50 MB
-- 约 25 MB，推荐用于上传 GPT
-- 约 15 MB
-
-选择压缩后：
-
-- 原始下载视频仍然保留。
-- 工具额外生成一个 720P、H.264/AAC MP4。
-- 文件名包含 `[适合上传-目标大小MB]`。
-- 实际文件大小可能与目标值略有差异。
-
-### 压缩本地视频
-
-页面下方的“压缩本地视频”支持：
-
-- MP4
-- MOV
-- M4V
-- MKV
-- WEBM
-
-选择本地文件和目标大小后点击“压缩本地视频”。文件会先上传到本机的 FastAPI 服务处理，压缩结果保存到当前“保存位置”，原始文件不会被修改。
-
-## 保存位置
-
-代码中的默认保存目录是当前用户的 Downloads 文件夹：
-
-```text
-Windows: C:\Users\<用户名>\Downloads\MyToolsVideos
-macOS:   /Users/<用户名>/Downloads/MyToolsVideos
+```bash
+git pull
 ```
 
-在页面修改保存位置后，项目会将设置写入：
-
-```text
-user_settings.json
-```
-
-该文件只保存在本机并已加入 `.gitignore`。
-
-## API
-
-本地服务提供以下接口：
-
-- `GET /`：打开网页界面
-- `GET /api/health`：检查 ffmpeg、YouTube 运行环境和默认目录
-- `GET /api/bilibili/auth`：读取不含 Cookie 的 B 站登录状态
-- `POST /api/bilibili/auth/qr`：生成 B 站登录二维码
-- `GET /api/bilibili/auth/qr/{qr_key}`：查询扫码状态
-- `POST /api/bilibili/auth/logout`：清除内存中的 B 站登录信息
-- `POST /api/settings`：保存下载目录
-- `POST /api/probe`：检测视频链接
-- `POST /api/download`：创建下载任务
-- `POST /api/compress-local`：上传并压缩本地视频
-- `GET /api/jobs/{job_id}`：查询任务状态
-- `POST /api/jobs/{job_id}/cancel`：停止任务
+然后重新运行 `run.bat` 或 `./run.sh`。启动脚本会根据最新的 `requirements.txt` 自动更新 Python 依赖。
 
 ## 常见问题
 
-### 页面打不开
+### 页面无法打开
 
-确认启动终端中仍然显示：
+确认启动窗口仍在运行，并显示类似内容：
 
 ```text
 Uvicorn running on http://127.0.0.1:8765
 ```
 
-然后刷新 `http://127.0.0.1:8765`。
+如果 `8765` 端口已被其他程序占用，请先关闭旧的工具进程，再重新启动。
 
-### 缺少 ffmpeg
+### 提示没有 ffmpeg 或 ffprobe
 
 Windows：
 
@@ -305,36 +216,105 @@ macOS：
 brew install ffmpeg
 ```
 
-### YouTube 没有返回可下载格式
+安装后必须重新打开终端，使 `PATH` 更新，然后再次启动工具。
 
-确认已经安装 Node.js 22+，然后停止服务并重新运行 `run.bat`（Windows）或 `./run.sh`（macOS/Linux）。启动脚本会根据 `requirements.txt` 安装或更新 `yt-dlp[default]`。
+### B 站只能下载 480P 或 720P
 
-### 抖音或小红书检测失败
+依次检查：
 
-- 尝试粘贴完整分享文本。
-- 在 Chrome 中登录对应网站。
-- 选择对应浏览器的登录状态；Windows 推荐 Firefox。
-- 更新 `yt-dlp` 后重启工具。
+1. 是否选择了“扫码登录 B 站”；
+2. 页面是否已经显示登录账号；
+3. 手机是否完成了确认，而不只是扫描二维码；
+4. 是否选择了“最高可用画质”；
+5. 账号是否有权在 B 站网页端播放目标画质；
+6. `yt-dlp` 是否已通过重新运行启动脚本更新。
 
-### 任务停在 95% 附近
+退出工具会清除扫码登录状态，下次启动需要重新扫码。
 
-这通常表示视频已经下载完成，正在合并、转换为通用 H.264/AAC MP4，或生成上传压缩版。4K 和长视频可能需要较长时间。页面会显示转换百分比；连续 5 分钟没有任何媒体进度时，工具会自动停止。
+### Windows 读取 Chrome Cookie 失败
 
-### 文件损坏或出现 `moov atom not found`
+优先改用内置的 B 站扫码登录或 Firefox。确实需要 Chrome 时，请完全退出 Chrome，并在任务管理器中确认所有 `chrome.exe` 进程都已结束。
 
-工具会检测不可读取的媒体文件、清理本次生成的半成品并自动重试一次。YouTube 使用 MKV 中间容器，以降低 4K 合并过程中生成损坏 MP4 的概率。
+### YouTube 提示没有可用格式
 
-## 更新依赖
+安装 Node.js 22+，关闭并重新启动工具：
 
-直接停止服务并重新运行平台对应的启动脚本即可；脚本每次都会根据 `requirements.txt` 检查并安装依赖。若要手动更新，Windows 使用 `.venv\Scripts\python.exe -m pip install --upgrade "yt-dlp[default]"`，macOS/Linux 使用 `.venv/bin/python -m pip install --upgrade "yt-dlp[default]"`。
+```powershell
+winget install --id OpenJS.NodeJS.LTS --exact
+```
 
-## 使用限制
+YouTube 的页面解析规则变化较快，也应确保启动时安装到了最新允许版本的 `yt-dlp`。
 
-- DRM 保护内容无法下载。
-- 私密、已过期、地区限制或账号无权限的内容可能无法下载。
-- 平台更新页面或接口后，可能需要等待 `yt-dlp` 更新。
-- 请只下载你有权访问和保存的内容，并遵守平台规则及当地法律。
+### 任务长时间停在 95% 附近
 
-## 参考项目
+这通常不是下载卡死，而是正在合并音视频、转换为通用 MP4，或生成上传压缩版。4K、8K 和长视频需要更多时间；页面会继续显示媒体处理进度。连续约 5 分钟没有任何媒体进度时，工具会自动停止该处理步骤并报告错误。
 
-B 站扫码登录、会员状态展示和画质档位设计参考了 MIT 许可的 [BilibiliVideoDownload](https://github.com/BilibiliVideoDownload/BilibiliVideoDownload) 项目；本工具仍使用自身的 FastAPI、网页界面和 `yt-dlp` 下载架构实现这些能力。
+### 出现 `moov atom not found` 或文件损坏
+
+工具会检查不可读取的媒体文件，清理本次产生的半成品并自动重试一次。YouTube 使用 MKV 作为中间合并容器，以降低高画质合并时生成损坏 MP4 的概率。
+
+### Windows 提示现有 `.venv` 不是有效环境
+
+`.venv` 不能在 Windows 与 macOS/Linux 之间共用。删除项目中的 `.venv` 后，在当前系统重新运行启动脚本即可创建新的环境。不要把 `.venv` 提交到 Git 或放进发布压缩包。
+
+## 开发与测试
+
+项目结构：
+
+```text
+app/                  FastAPI 接口、下载任务、B 站登录和设置
+static/               本地网页界面
+tests/                自动化测试
+run.bat / run.ps1     Windows 启动入口
+run.sh                macOS/Linux 启动入口
+requirements.txt      Python 依赖
+```
+
+安装依赖后运行测试：
+
+Windows：
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+node --check static\app.js
+```
+
+macOS/Linux：
+
+```bash
+.venv/bin/python -m unittest discover -s tests -v
+node --check static/app.js
+```
+
+本地 API：
+
+| 方法 | 路径 | 用途 |
+| --- | --- | --- |
+| `GET` | `/api/health` | 运行环境、保存目录和 B 站登录摘要 |
+| `GET` | `/api/bilibili/auth` | 查询不含 Cookie 的 B 站登录状态 |
+| `POST` | `/api/bilibili/auth/qr` | 生成 B 站登录二维码 |
+| `GET` | `/api/bilibili/auth/qr/{qr_key}` | 查询扫码状态 |
+| `POST` | `/api/bilibili/auth/logout` | 清除内存中的 B 站登录信息 |
+| `POST` | `/api/settings` | 保存下载目录 |
+| `POST` | `/api/probe` | 检测和解析链接 |
+| `POST` | `/api/download` | 创建下载任务 |
+| `POST` | `/api/compress-local` | 上传并压缩本地视频 |
+| `GET` | `/api/jobs/{job_id}` | 查询任务状态 |
+| `POST` | `/api/jobs/{job_id}/cancel` | 停止任务 |
+
+## 隐私与安全
+
+- 服务默认只监听 `127.0.0.1`，不会主动开放到局域网或公网。
+- B 站扫码 Cookie 仅保存在内存中，并使用 `.bilibili.com` 域级作用域提供给下载引擎。
+- 浏览器登录模式由 `yt-dlp` 直接读取本机浏览器 Cookie，本工具不会收集用户名或密码。
+- 上传本地视频进行压缩时，临时文件保存在项目的 `.mytools_uploads` 中，任务结束后会清理。
+- 不要将服务端口暴露到公网，也不要向他人提供包含登录状态的运行环境。
+
+## 技术实现与致谢
+
+- Web 服务：[FastAPI](https://fastapi.tiangolo.com/)
+- 下载与网站解析：[yt-dlp](https://github.com/yt-dlp/yt-dlp)
+- 音视频处理：[FFmpeg](https://ffmpeg.org/)
+- B 站扫码登录、会员状态展示和画质档位设计参考了 MIT 许可的 [BilibiliVideoDownload](https://github.com/BilibiliVideoDownload/BilibiliVideoDownload) 项目
+
+本项目使用自己的 FastAPI 后端、原生网页界面和 `yt-dlp` 下载流程实现上述功能。
