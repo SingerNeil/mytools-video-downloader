@@ -24,6 +24,8 @@ const detectedPlatform = document.querySelector("#detectedPlatform");
 const pasteBtn = document.querySelector("#pasteBtn");
 const copyPathBtn = document.querySelector("#copyPathBtn");
 const localFileName = document.querySelector("#localFileName");
+const settingsNavBtn = document.querySelector("#settingsNavBtn");
+const advancedSettings = document.querySelector("#advancedSettings");
 const log = document.querySelector("#log");
 const bilibiliAuthPanel = document.querySelector("#bilibiliAuthPanel");
 const bilibiliAuthStatus = document.querySelector("#bilibiliAuthStatus");
@@ -499,6 +501,10 @@ probeBtn.addEventListener("click", probe);
 downloadBtn.addEventListener("click", startDownload);
 compressLocalBtn.addEventListener("click", startLocalCompression);
 cancelBtn.addEventListener("click", cancelDownload);
+settingsNavBtn.addEventListener("click", () => {
+  advancedSettings.open = true;
+  advancedSettings.scrollIntoView({ block: "center" });
+});
 pasteBtn.addEventListener("click", async () => {
   try {
     const clipboardText = await navigator.clipboard.readText();

@@ -3,90 +3,79 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#f2eee7" />
-    <title>MyTools · 流媒体视频下载</title>
+    <meta name="theme-color" content="#e9e8e4" />
+    <title>MyTools · 视频下载</title>
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
-    <header class="topbar">
-      <div class="topbar-inner">
+    <main class="desktop-app">
+      <aside class="sidebar">
         <a class="brand" href="/" aria-label="MyTools 视频下载首页">
-          <span class="brand-symbol" aria-hidden="true">
-            <svg viewBox="0 0 24 24">
-              <path d="M12 3v11m0 0 4.25-4.25M12 14 7.75 9.75M5 18v1a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-1" />
-            </svg>
+          <span class="brand-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M12 3v11m0 0 4-4m-4 4-4-4M5 18v1a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-1" /></svg>
           </span>
-          <span class="brand-copy">
+          <span>
             <strong>MyTools</strong>
-            <small>Stream Downloader</small>
+            <small>视频下载</small>
           </span>
         </a>
 
-        <div class="topbar-meta">
-          <span id="systemBadge" class="system-badge">
-            <span class="online-dot"></span>
+        <nav class="sidebar-nav" aria-label="功能导航">
+          <a class="nav-item active" href="#downloadWorkspace">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 20h14" /></svg>
+            <span>下载视频</span>
+          </a>
+          <a class="nav-item" href="#localTool">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h7l5 5v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm7 0v5h5M9 15h6m-3-3v6" /></svg>
+            <span>压缩工具</span>
+          </a>
+          <button id="settingsNavBtn" class="nav-item" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10m4 0h2M4 17h2m4 0h10M14 4v6M6 14v6" /></svg>
+            <span>下载设置</span>
+          </button>
+        </nav>
+
+        <div class="sidebar-note">
+          <strong>支持常见流媒体网站</strong>
+          <p>哔哩哔哩、抖音、YouTube、小红书及其他 yt-dlp 支持的网站。</p>
+        </div>
+
+        <div class="sidebar-status">
+          <div class="system-row">
+            <span class="live-dot"></span>
             <span id="systemLabel">本机服务</span>
+          </div>
+          <span id="envBadge" class="env-badge">检查下载环境…</span>
+        </div>
+      </aside>
+
+      <div class="workbench">
+        <header class="workbench-header">
+          <div>
+            <h1>下载视频</h1>
+            <p>粘贴链接，选择画质，然后保存到本地。</p>
+          </div>
+          <span id="detectedPlatform" class="detected-platform waiting">
+            <span class="detected-dot"></span>
+            等待链接
           </span>
-          <span id="envBadge" class="env-badge">正在检查环境</span>
-        </div>
-      </div>
-    </header>
+        </header>
 
-    <main class="app-shell">
-      <section class="intro" aria-labelledby="pageTitle">
-        <div>
-          <p class="overline">VIDEO WORKSPACE</p>
-          <h1 id="pageTitle">保存你想留下的视频</h1>
-          <p class="intro-copy">粘贴链接，选择画质。支持常见流媒体网站，文件只保存在你的电脑。</p>
-        </div>
-        <div class="platforms" aria-label="常用支持平台">
-          <span class="platform-chip"><i class="chip-mark pink"></i>哔哩哔哩</span>
-          <span class="platform-chip"><i class="chip-mark black"></i>抖音</span>
-          <span class="platform-chip"><i class="chip-mark red"></i>YouTube</span>
-          <span class="platform-chip"><i class="chip-mark coral"></i>小红书</span>
-          <span class="platform-chip muted"><i class="chip-mark sage"></i>更多</span>
-        </div>
-      </section>
-
-      <div class="workspace">
-        <section class="download-panel" aria-labelledby="downloadTitle">
-          <div class="panel-header">
-            <div>
-              <span class="section-index">01</span>
-              <div>
-                <p class="section-label">DOWNLOAD</p>
-                <h2 id="downloadTitle">下载视频</h2>
-              </div>
-            </div>
-            <span class="private-label">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 5.5 6v5c0 4.4 2.6 7.6 6.5 9.5 3.9-1.9 6.5-5.1 6.5-9.5V6L12 3Z" /></svg>
-              本地处理
+        <section id="downloadWorkspace" class="download-workspace" aria-label="新建下载">
+          <label class="field-label" for="urlInput">视频链接或分享文案</label>
+          <div class="url-input-wrap">
+            <span class="url-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M9.7 14.3a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1.4 1.4m3 2.7a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1.4-1.4" /></svg>
             </span>
+            <input id="urlInput" type="text" placeholder="粘贴视频地址，或直接粘贴整段分享文案" autocomplete="off" spellcheck="false" />
+            <button id="pasteBtn" class="text-button pressable" type="button">粘贴</button>
           </div>
+          <p class="url-hint">链接只在这台电脑上处理，不会上传到其他服务器。</p>
 
-          <div class="url-section">
-            <label class="input-label" for="urlInput">视频链接或分享文案</label>
-            <div class="url-control">
-              <span class="url-control-icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24"><path d="M9.7 14.3a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1.4 1.4m3 2.7a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1.4-1.4" /></svg>
-              </span>
-              <input id="urlInput" type="text" placeholder="在这里粘贴视频链接…" autocomplete="off" spellcheck="false" />
-              <button id="pasteBtn" class="paste-button pressable" type="button">粘贴</button>
-            </div>
-            <div class="link-meta" aria-live="polite">
-              <span id="detectedPlatform" class="detected-platform waiting">
-                <span class="detected-dot"></span>
-                等待链接
-              </span>
-              <span>支持直接粘贴包含链接的整段分享文案</span>
-            </div>
-          </div>
-
-          <div class="core-options">
+          <div class="download-options">
             <label class="field">
-              <span class="input-label">下载画质</span>
-              <span class="select-control">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M7 12h10m-7 5h4" /></svg>
+              <span class="field-label">画质</span>
+              <span class="select-wrap">
                 <select id="quality">
                   <option value="best">最高可用画质</option>
                   <option value="60fps">优先 60 帧</option>
@@ -100,46 +89,39 @@
                 </select>
               </span>
             </label>
+
+            <label class="field scope-field">
+              <span class="field-label">范围</span>
+              <span class="select-wrap">
+                <select id="downloadScope">
+                  <option value="single">当前视频</option>
+                  <option value="collection">整个合集 / 列表</option>
+                </select>
+              </span>
+            </label>
           </div>
 
           <div class="download-actions">
             <button id="downloadBtn" type="button" class="primary-button pressable">
-              <span>开始下载</span>
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v12m0 0 4-4m-4 4-4-4M5 20h14" /></svg>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 20h14" /></svg>
+              开始下载
             </button>
-            <button id="probeBtn" type="button" class="ghost-button pressable">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 4a7 7 0 1 0 4.9 12l4.1 4M8.5 11h5M11 8.5v5" /></svg>
-              检测链接
-            </button>
+            <button id="probeBtn" type="button" class="secondary-button pressable">检测链接</button>
             <button id="cancelBtn" type="button" class="cancel-button pressable" disabled hidden>停止任务</button>
           </div>
 
-          <details class="advanced-settings">
-            <summary class="pressable">
-              <span class="summary-title">
-                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10m4 0h2M4 17h2m4 0h10M14 4v6M6 14v6" /></svg>
-                高级设置
-              </span>
-              <span class="summary-description">登录状态、合集、压缩和保存位置</span>
-              <span class="summary-chevron" aria-hidden="true"></span>
+          <details id="advancedSettings" class="advanced-settings">
+            <summary>
+              <span>更多设置</span>
+              <span class="summary-hint">登录状态、压缩、保存位置</span>
+              <span class="chevron" aria-hidden="true"></span>
             </summary>
-
             <div class="advanced-content">
               <input id="platformHint" type="hidden" value="waiting" />
               <div class="settings-grid">
                 <label class="field">
-                  <span class="input-label">下载范围</span>
-                  <span class="select-control compact-select">
-                    <select id="downloadScope">
-                      <option value="single">仅下载当前视频</option>
-                      <option value="collection">下载整个合集 / 列表</option>
-                    </select>
-                  </span>
-                </label>
-
-                <label class="field">
-                  <span class="input-label">登录状态</span>
-                  <span class="select-control compact-select">
+                  <span class="field-label">登录状态</span>
+                  <span class="select-wrap">
                     <select id="cookieSource">
                       <option value="none">不使用登录状态</option>
                       <option value="bilibili">扫码登录 B 站（高画质）</option>
@@ -150,10 +132,10 @@
                 </label>
 
                 <label class="field">
-                  <span class="input-label">额外压缩</span>
-                  <span class="select-control compact-select">
+                  <span class="field-label">下载后额外压缩</span>
+                  <span class="select-wrap">
                     <select id="compressionTarget">
-                      <option value="0">不压缩，保留原始文件</option>
+                      <option value="0">不压缩</option>
                       <option value="50">生成约 50 MB 副本</option>
                       <option value="25">生成约 25 MB 副本</option>
                       <option value="15">生成约 15 MB 副本</option>
@@ -161,15 +143,15 @@
                   </span>
                 </label>
 
-                <label class="field">
-                  <span class="input-label">保存位置</span>
-                  <input id="outputDir" class="path-input" type="text" spellcheck="false" />
+                <label class="field output-field">
+                  <span class="field-label">保存位置</span>
+                  <input id="outputDir" type="text" spellcheck="false" />
                 </label>
               </div>
-              <p class="settings-note">压缩只会创建新文件，不会覆盖原始视频。</p>
+              <p class="settings-note">额外压缩会生成新文件，不会覆盖原始视频。</p>
 
               <div id="bilibiliAuthPanel" class="auth-panel" hidden>
-                <div class="auth-copy">
+                <div>
                   <strong>B 站扫码登录</strong>
                   <p id="bilibiliAuthStatus">登录信息仅保存在本次工具运行的内存中。</p>
                 </div>
@@ -179,46 +161,37 @@
                 </div>
                 <div id="bilibiliQrArea" class="qr-area" hidden>
                   <img id="bilibiliQrImage" alt="B 站登录二维码" />
-                  <p>使用哔哩哔哩手机客户端扫码并确认，二维码约 3 分钟后过期。</p>
+                  <p>使用哔哩哔哩手机客户端扫码并确认。</p>
                 </div>
               </div>
             </div>
           </details>
         </section>
 
-        <aside class="status-panel" aria-labelledby="statusTitle">
-          <div class="status-orb" aria-hidden="true"></div>
-          <div class="status-topline">
+        <section class="task-section" aria-labelledby="taskTitle">
+          <div class="task-header">
             <div>
-              <p class="status-label">CURRENT TASK</p>
-              <h2 id="statusTitle">当前任务</h2>
+              <h2 id="taskTitle">当前任务</h2>
+              <p id="message">还没有下载任务</p>
             </div>
             <span id="jobState" class="state idle"><span class="state-dot"></span>空闲</span>
           </div>
 
-          <div class="progress-display">
+          <div class="progress-row">
+            <div id="progressTrack" class="progress-track" role="progressbar" aria-label="任务进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+              <div id="progressBar"></div>
+            </div>
             <strong id="progressValue">0%</strong>
-            <span>下载进度</span>
-          </div>
-          <div id="progressTrack" class="progress-track" role="progressbar" aria-label="任务进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
-            <div id="progressBar"></div>
-          </div>
-
-          <div class="task-message">
-            <span class="task-message-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24"><path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Zm0-12v4m0 3h.01" /></svg>
-            </span>
-            <p id="message">粘贴一个视频链接，开始新的下载任务。</p>
           </div>
 
           <dl id="details" class="task-details">
             <div>
-              <dt>视频标题</dt>
+              <dt>视频</dt>
               <dd id="title">尚未检测</dd>
             </div>
             <div>
-              <dt>保存文件</dt>
-              <dd id="savedFile">完成后会显示文件路径</dd>
+              <dt>保存到</dt>
+              <dd id="savedFile">完成后显示文件路径</dd>
               <button id="copyPathBtn" class="copy-button pressable" type="button" hidden>
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 8h9a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2Zm-5 7H3a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
                 <span>复制路径</span>
@@ -227,51 +200,38 @@
           </dl>
 
           <details class="log-panel">
-            <summary class="pressable">
-              <span>运行记录</span>
-              <span class="log-indicator" aria-hidden="true"></span>
-            </summary>
+            <summary>运行记录</summary>
             <pre id="log" class="log" aria-live="polite"></pre>
           </details>
-        </aside>
-      </div>
+        </section>
 
-      <section class="local-tool" aria-labelledby="localTitle">
-        <div class="local-heading">
-          <span class="local-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24"><path d="M7 3h7l5 5v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm7 0v5h5M9 15h6m-3-3v6" /></svg>
-          </span>
-          <div>
-            <p class="section-label">LOCAL TOOL</p>
-            <h2 id="localTitle">压缩本地视频</h2>
-            <p>生成一个更适合分享的小尺寸副本，原文件不会改变。</p>
+        <section id="localTool" class="local-tool" aria-labelledby="localTitle">
+          <div class="section-heading">
+            <div>
+              <h2 id="localTitle">压缩本地视频</h2>
+              <p>生成一个体积更小的副本，原文件不会改变。</p>
+            </div>
           </div>
-        </div>
-
-        <div class="local-controls">
-          <label class="file-control pressable" for="localVideoInput">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0L8 8m4-4 4 4M5 14v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5" /></svg>
-            <span id="localFileName">选择视频文件</span>
-            <input id="localVideoInput" type="file" accept="video/mp4,video/quicktime,video/x-m4v,video/x-matroska,video/webm,.mp4,.mov,.m4v,.mkv,.webm" />
-          </label>
-          <label class="field local-target">
-            <span class="input-label">目标大小</span>
-            <span class="select-control compact-select">
-              <select id="localCompressionTarget">
-                <option value="50">约 50 MB</option>
-                <option value="25" selected>约 25 MB</option>
-                <option value="15">约 15 MB</option>
-              </select>
-            </span>
-          </label>
-          <button id="compressLocalBtn" type="button" class="local-submit pressable">开始压缩</button>
-        </div>
-      </section>
-
-      <footer class="footer">
-        <span>MyTools Video Downloader</span>
-        <span>Windows &amp; macOS</span>
-      </footer>
+          <div class="local-controls">
+            <label class="file-picker pressable" for="localVideoInput">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0L8 8m4-4 4 4M5 14v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5" /></svg>
+              <span id="localFileName">选择视频文件</span>
+              <input id="localVideoInput" type="file" accept="video/mp4,video/quicktime,video/x-m4v,video/x-matroska,video/webm,.mp4,.mov,.m4v,.mkv,.webm" />
+            </label>
+            <label class="field local-size">
+              <span class="field-label">目标大小</span>
+              <span class="select-wrap">
+                <select id="localCompressionTarget">
+                  <option value="50">约 50 MB</option>
+                  <option value="25" selected>约 25 MB</option>
+                  <option value="15">约 15 MB</option>
+                </select>
+              </span>
+            </label>
+            <button id="compressLocalBtn" type="button" class="secondary-button pressable">开始压缩</button>
+          </div>
+        </section>
+      </div>
     </main>
 
     <script src="/static/app.js"></script>
