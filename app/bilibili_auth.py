@@ -52,7 +52,7 @@ class BilibiliAuthManager:
         self._clock = clock
         self._lock = RLock()
         self._pending: dict[str, PendingLogin] = {}
-        self._cookie_header: str | None = None
+        self._cookies: dict[str, str] = {}
         self._user: dict[str, Any] | None = None
 
     def _cleanup_expired(self) -> None:
@@ -142,7 +142,6 @@ class BilibiliAuthManager:
                 self._pending.pop(qr_key, None)
             pending.session.close()
             raise BilibiliAuthError("扫码成功，但 B 站没有返回 SESSDATA 登录信息。")
-        cookie_header = "; ".join(f"{name}={value}" for name, value in cookies.items())
         try:
             user = self._fetch_user(pending.session)
         except BilibiliAuthError:
@@ -151,7 +150,7 @@ class BilibiliAuthManager:
             pending.session.close()
             raise
         with self._lock:
-            self._cookie_header = cookie_header
+            self._cookies = cookies
             self._user = user
             self._pending.pop(qr_key, None)
         pending.session.close()
@@ -176,21 +175,26 @@ class BilibiliAuthManager:
             "vip": bool(data.get("vipStatus")),
         }
 
-    def cookie_header(self) -> str:
+    def cookie_file(self) -> io.StringIO:
         with self._lock:
-            if not self._cookie_header:
+            if not self._cookies:
                 raise BilibiliAuthError("尚未扫码登录 B 站，请先在页面完成扫码登录。")
-            return self._cookie_header
+            lines = ["# Netscape HTTP Cookie File\n"]
+            for name, value in self._cookies.items():
+                if any(character in name or character in value for character in "\t\r\n"):
+                    raise BilibiliAuthError("B 站返回了无效的 Cookie 登录信息，请重新扫码。")
+                lines.append(f".bilibili.com\tTRUE\t/\tTRUE\t0\t{name}\t{value}\n")
+            return io.StringIO("".join(lines))
 
     def status(self) -> dict[str, Any]:
         with self._lock:
-            return {"authenticated": bool(self._cookie_header), "user": self._user}
+            return {"authenticated": bool(self._cookies), "user": self._user}
 
     def logout(self) -> dict[str, Any]:
         with self._lock:
             for pending in self._pending.values():
                 pending.session.close()
-            self._cookie_header = None
+            self._cookies.clear()
             self._user = None
             self._pending.clear()
         return self.status()

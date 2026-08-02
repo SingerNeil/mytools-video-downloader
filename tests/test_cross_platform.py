@@ -3,8 +3,11 @@ from __future__ import annotations
 import os
 import sys
 import unittest
+from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
+
+import yt_dlp
 
 from app.downloader import (
     bilibili_format_for_quality,
@@ -49,12 +52,19 @@ class CrossPlatformTests(unittest.TestCase):
         self.assertEqual(normalize_cookie_source("firefox"), "firefox")
         self.assertEqual(ydl_options("firefox")["cookiesfrombrowser"], ("firefox",))
 
-    def test_bilibili_qr_session_is_loaded_as_cookie_header(self) -> None:
+    def test_bilibili_qr_session_is_scoped_to_all_bilibili_subdomains(self) -> None:
         url = "https://www.bilibili.com/video/BV1xx411c7mD"
-        with patch("app.downloader.bilibili_auth.cookie_header", return_value="SESSDATA=test"):
+        cookie_file = StringIO(
+            "# Netscape HTTP Cookie File\n"
+            ".bilibili.com\tTRUE\t/\tTRUE\t0\tSESSDATA\ttest\n"
+        )
+        with patch("app.downloader.bilibili_auth.cookie_file", return_value=cookie_file):
             options = ydl_options("bilibili", url=url)
 
-        self.assertEqual(options["http_headers"]["Cookie"], "SESSDATA=test")
+        ydl = yt_dlp.YoutubeDL(options)
+        self.assertIn("SESSDATA=test", ydl.cookiejar.get_cookie_header("https://api.bilibili.com/"))
+        self.assertIsNone(ydl.cookiejar.get_cookie_header("https://example.com/"))
+        ydl.close()
 
     def test_bilibili_8k_quality_keeps_the_highest_stream_below_4320p(self) -> None:
         selected_format = bilibili_format_for_quality("4320p")

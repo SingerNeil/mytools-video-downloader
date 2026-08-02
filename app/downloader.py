@@ -1015,7 +1015,9 @@ def ydl_options(
         if platform_id != "bilibili":
             raise DownloadError("扫码登录 B 站只能用于哔哩哔哩链接。")
         try:
-            opts["http_headers"]["Cookie"] = bilibili_auth.cookie_header()
+            # An in-memory Netscape cookie file keeps credentials available to
+            # both www.bilibili.com and api.bilibili.com without touching disk.
+            opts["cookiefile"] = bilibili_auth.cookie_file()
         except BilibiliAuthError as exc:
             raise DownloadError(str(exc)) from exc
     elif cookie_source != "none":

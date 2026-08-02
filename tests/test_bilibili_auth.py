@@ -78,7 +78,9 @@ class BilibiliAuthTests(unittest.TestCase):
         self.assertEqual(result["user"]["name"], "测试用户")
         self.assertTrue(result["user"]["vip"])
         self.assertNotIn("SESSDATA", str(self.manager.status()))
-        self.assertIn("SESSDATA=secret-session", self.manager.cookie_header())
+        cookie_data = self.manager.cookie_file().getvalue()
+        self.assertIn(".bilibili.com\tTRUE", cookie_data)
+        self.assertIn("SESSDATA\tsecret-session", cookie_data)
         self.assertTrue(self.session.closed)
 
     def test_qr_waiting_status_does_not_authenticate(self) -> None:
