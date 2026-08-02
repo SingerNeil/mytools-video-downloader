@@ -124,7 +124,9 @@ B 站的 1080P 高码率、4K、8K、HDR、杜比等画质是否可用，取决�
 
 可以直接粘贴分享文案，无需手动提取其中的短链接。抖音 `/user/self?modal_id=...` 链接会自动转换为对应的视频地址。
 
-公开内容优先选择“不使用登录状态”。遇到需要登录或平台风控时，可先在浏览器中登录对应网站，再选择 Firefox 或 Chrome 登录状态重试。网站接口会变化，某些链接可能需要等待新版 `yt-dlp` 支持。
+Windows 下载抖音时会优先使用一个隔离的 Microsoft Edge 无头页面，让抖音网页自行完成当前接口所需的签名，再把页面返回的视频格式交给下载引擎。这个流程不会读取正在运行的 Chrome Cookie 数据库，因此 Chrome 无需退出，也不要求安装 Firefox。macOS/Linux 会先尝试常规解析，失败后再使用本机 Chrome 或 Edge 执行同样的页面回退。
+
+公开内容选择“不使用登录状态”即可。`/user/self?...&modal_id=...` 这类从“我的喜欢”页面复制的链接，只要对应视频本身可公开访问，也可以直接下载。私密、仅登录账号可见或需要人工验证码的内容仍可能无法自动处理。
 
 ## 视频压缩
 
@@ -233,7 +235,7 @@ brew install ffmpeg
 
 ### Windows 读取 Chrome Cookie 失败
 
-优先改用内置的 B 站扫码登录或 Firefox。确实需要 Chrome 时，请完全退出 Chrome，并在任务管理器中确认所有 `chrome.exe` 进程都已结束。
+抖音公开链接不需要读取 Chrome Cookie，选择“不使用登录状态”即可触发 Edge 自动解析。其他网站优先改用内置的 B 站扫码登录或 Firefox；确实需要 Chrome 时，请完全退出 Chrome，并在任务管理器中确认所有 `chrome.exe` 进程都已结束。
 
 ### YouTube 提示没有可用格式
 
@@ -316,5 +318,6 @@ node --check static/app.js
 - 下载与网站解析：[yt-dlp](https://github.com/yt-dlp/yt-dlp)
 - 音视频处理：[FFmpeg](https://ffmpeg.org/)
 - B 站扫码登录、会员状态展示和画质档位设计参考了 MIT 许可的 [BilibiliVideoDownload](https://github.com/BilibiliVideoDownload/BilibiliVideoDownload) 项目
+- 抖音浏览器回退思路参考了 MIT 许可的 [douyin-downloader](https://github.com/jiji262/douyin-downloader) 项目
 
 本项目使用自己的 FastAPI 后端、原生网页界面和 `yt-dlp` 下载流程实现上述功能。

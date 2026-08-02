@@ -11,10 +11,13 @@ import yt_dlp
 
 from app.downloader import (
     bilibili_format_for_quality,
+    extract_info_with_platform_fallback,
     ffmpeg_available,
+    is_playback_compatible_mp4,
     normalize_cookie_source,
     platform_name,
     preferred_hardware_encoder,
+    resolve_media_tool,
     run_ffmpeg_with_progress,
     safe_output_dir,
     safe_path_name,
@@ -45,7 +48,10 @@ class CrossPlatformTests(unittest.TestCase):
             self.assertEqual(safe_output_dir(syntax), Path.cwd() / "videos")
 
     def test_ffmpeg_requires_ffprobe_too(self) -> None:
-        with patch("app.downloader.shutil.which", side_effect=lambda name: "tool" if name == "ffmpeg" else None):
+        with patch(
+            "app.downloader.resolve_media_tool",
+            side_effect=lambda name: "tool" if name == "ffmpeg" else None,
+        ):
             self.assertFalse(ffmpeg_available())
 
     def test_firefox_cookie_source_is_supported(self) -> None:
@@ -70,6 +76,60 @@ class CrossPlatformTests(unittest.TestCase):
         selected_format = bilibili_format_for_quality("4320p")
 
         self.assertIn("height<=4320", selected_format)
+
+    def test_douyin_on_windows_does_not_read_a_locked_browser_database(self) -> None:
+        url = "https://www.douyin.com/video/7651536731300236584"
+
+        options = ydl_options("chrome", url=url)
+
+        self.assertNotIn("cookiesfrombrowser", options)
+
+    def test_douyin_ignores_a_stale_bilibili_login_selection(self) -> None:
+        url = "https://www.douyin.com/video/7651536731300236584"
+
+        options = ydl_options("bilibili", url=url)
+
+        self.assertNotIn("cookiefile", options)
+        self.assertNotIn("cookiesfrombrowser", options)
+
+    def test_douyin_on_windows_uses_edge_before_the_standard_extractor(self) -> None:
+        url = "https://www.douyin.com/video/7651536731300236584"
+
+        class FakeYdl:
+            def process_ie_result(self, info, download):
+                return {**info, "processed": True, "download": download}
+
+        with (
+            patch("app.downloader.os.name", "nt"),
+            patch(
+                "app.downloader.extract_douyin_info",
+                return_value={
+                    "id": "7651536731300236584",
+                    "formats": [{"url": "https://example.test/video.mp4"}],
+                },
+            ),
+            patch("app.downloader.extract_info_with_retries") as standard_extract,
+        ):
+            result = extract_info_with_platform_fallback(FakeYdl(), url, download=False)
+
+        self.assertTrue(result["processed"])
+        self.assertFalse(result["download"])
+        standard_extract.assert_not_called()
+
+    def test_completed_mp4_is_preserved_when_ffprobe_is_unavailable(self) -> None:
+        with patch("app.downloader.resolve_media_tool", return_value=None):
+            self.assertTrue(is_playback_compatible_mp4(Path("video.mp4")))
+
+    def test_windows_finds_ffmpeg_installed_by_winget(self) -> None:
+        fake_tool = Path("C:/Users/test/AppData/Local/Microsoft/WinGet/Links/ffprobe.exe")
+        with (
+            patch("app.downloader.shutil.which", return_value=None),
+            patch.dict(os.environ, {"LOCALAPPDATA": "C:/Users/test/AppData/Local"}),
+            patch("app.downloader.Path.is_file", return_value=True),
+        ):
+            resolved = resolve_media_tool("ffprobe")
+
+        self.assertEqual(Path(resolved), fake_tool)
 
     def test_platform_labels(self) -> None:
         with patch("app.downloader.sys.platform", "darwin"), patch("app.downloader.os.name", "posix"):

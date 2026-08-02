@@ -74,7 +74,20 @@ Write-Host "Installing/updating Python dependencies..."
 & $VenvPython -m pip install --disable-pip-version-check -r (Join-Path $ProjectDir "requirements.txt")
 
 if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue) -or -not (Get-Command ffprobe -ErrorAction SilentlyContinue)) {
-    Write-Warning "ffmpeg/ffprobe were not found. Install them with: winget install --id Gyan.FFmpeg --exact"
+    $WinGetPackages = Join-Path $env:LOCALAPPDATA "Microsoft\WinGet\Packages"
+    $WinGetFFmpeg = Get-ChildItem -LiteralPath $WinGetPackages -Directory -Filter "Gyan.FFmpeg_*" -ErrorAction SilentlyContinue |
+        ForEach-Object {
+            Get-ChildItem -LiteralPath $_.FullName -Filter "ffmpeg.exe" -File -Recurse -ErrorAction SilentlyContinue
+        } |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 1
+    if ($WinGetFFmpeg) {
+        $env:Path = "$($WinGetFFmpeg.Directory.FullName);$env:Path"
+        Write-Host "Using FFmpeg installed by winget: $($WinGetFFmpeg.Directory.FullName)"
+    }
+    else {
+        Write-Warning "ffmpeg/ffprobe were not found. Install them with: winget install --id Gyan.FFmpeg --exact"
+    }
 }
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
     Write-Warning "Node.js was not found. YouTube downloads recommend Node.js 22+: winget install --id OpenJS.NodeJS.LTS --exact"

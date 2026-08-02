@@ -232,6 +232,11 @@ function applyLinkDefaults() {
   platformHint.value = platform;
   downloadScope.value = recommendedScope;
 
+  if (platform === "douyin" && cookieSource.value !== "none") {
+    cookieSource.value = "none";
+    showBilibiliAuthPanel();
+  }
+
   if (nextKey !== lastLinkDefaultsKey) {
     const scopeText = recommendedScope === "collection" ? "下载整个合集/列表" : "仅下载当前视频";
     message.textContent = `已识别：${platformLabels[platform]}，已切换为“${scopeText}”。`;

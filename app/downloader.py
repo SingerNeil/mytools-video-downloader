@@ -19,6 +19,7 @@ from uuid import uuid4
 import yt_dlp
 
 from .bilibili_auth import BilibiliAuthError, bilibili_auth
+from .douyin_browser import DouyinBrowserError, extract_douyin_info
 from .jobs import jobs
 
 
@@ -87,8 +88,39 @@ class DownloadError(RuntimeError):
     pass
 
 
+def resolve_media_tool(name: str) -> str | None:
+    executable = shutil.which(name)
+    if executable:
+        return executable
+    if os.name != "nt":
+        return None
+
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    if not local_app_data:
+        return None
+    root = Path(local_app_data)
+    direct_candidates = (
+        root / "Microsoft" / "WinGet" / "Links" / f"{name}.exe",
+        root / "scoop" / "apps" / "ffmpeg" / "current" / "bin" / f"{name}.exe",
+    )
+    for candidate in direct_candidates:
+        try:
+            if candidate.is_file():
+                return str(candidate)
+        except OSError:
+            continue
+
+    package_root = root / "Microsoft" / "WinGet" / "Packages"
+    try:
+        matches = list(package_root.glob(f"Gyan.FFmpeg_*/ffmpeg-*-full_build/bin/{name}.exe"))
+        matches.sort(key=lambda path: path.stat().st_mtime, reverse=True)
+    except OSError:
+        matches = []
+    return str(matches[0]) if matches else None
+
+
 def ffmpeg_available() -> bool:
-    return shutil.which("ffmpeg") is not None and shutil.which("ffprobe") is not None
+    return resolve_media_tool("ffmpeg") is not None and resolve_media_tool("ffprobe") is not None
 
 
 def platform_name() -> str:
@@ -399,13 +431,75 @@ def extract_info_with_retries(
     return None
 
 
+def extract_info_with_platform_fallback(
+    ydl: yt_dlp.YoutubeDL,
+    url: str,
+    *,
+    download: bool,
+    job_id: str | None = None,
+    message: str = "网络连接中断",
+) -> dict[str, Any] | None:
+    is_douyin = detect_platform(url)["id"] == "douyin"
+    if is_douyin and os.name == "nt":
+        try:
+            if job_id:
+                jobs.update(
+                    job_id,
+                    status="running",
+                    message="正在使用 Windows Edge 解析抖音页面",
+                )
+            info = extract_douyin_info(url, ydl)
+            return ydl.process_ie_result(info, download=download)
+        except DouyinBrowserError as browser_exc:
+            # Keep yt-dlp as a last chance when Edge is unavailable or a page
+            # temporarily fails to expose its signed detail response.
+            try:
+                return extract_info_with_retries(
+                    ydl,
+                    url,
+                    download=download,
+                    job_id=job_id,
+                    message=message,
+                )
+            except Exception as original_exc:
+                raise DownloadError(
+                    f"Edge 自动解析失败：{browser_exc} {readable_error(original_exc)}"
+                ) from original_exc
+
+    try:
+        return extract_info_with_retries(
+            ydl,
+            url,
+            download=download,
+            job_id=job_id,
+            message=message,
+        )
+    except Exception as original_exc:
+        if not is_douyin:
+            raise
+
+        if job_id:
+            jobs.update(
+                job_id,
+                status="running",
+                message="常规抖音解析受限，正在使用本机浏览器自动解析",
+            )
+        try:
+            info = extract_douyin_info(url, ydl)
+            return ydl.process_ie_result(info, download=download)
+        except DouyinBrowserError as fallback_exc:
+            original_message = readable_error(original_exc)
+            raise DownloadError(f"{original_message} 浏览器自动解析也失败：{fallback_exc}") from fallback_exc
+
+
 def ffprobe_media_info(path: Path) -> dict[str, Any]:
-    if not shutil.which("ffprobe"):
+    ffprobe = resolve_media_tool("ffprobe")
+    if not ffprobe:
         raise FileNotFoundError("找不到 ffprobe；" + dependency_install_hint())
 
     result = subprocess.run(
         [
-            "ffprobe",
+            ffprobe,
             "-v",
             "error",
             "-show_entries",
@@ -428,7 +522,7 @@ def ffprobe_streams(path: Path) -> list[dict[str, Any]]:
 
 
 def is_readable_media_file(path: Path) -> bool:
-    if not shutil.which("ffprobe"):
+    if not resolve_media_tool("ffprobe"):
         # Without ffprobe we cannot validate codecs, but a non-empty completed
         # file must not be mistaken for a corrupt download and deleted.
         try:
@@ -462,7 +556,7 @@ def ffprobe_duration(path: Path) -> float | None:
 
     try:
         result = subprocess.run(
-            ["ffmpeg", "-hide_banner", "-i", str(path)],
+            [resolve_media_tool("ffmpeg") or "ffmpeg", "-hide_banner", "-i", str(path)],
             check=False,
             capture_output=True,
             text=True,
@@ -482,6 +576,11 @@ def ffprobe_duration(path: Path) -> float | None:
 def is_playback_compatible_mp4(path: Path) -> bool:
     if path.suffix.lower() != ".mp4":
         return False
+    if not resolve_media_tool("ffprobe"):
+        # The Douyin Edge fallback deliberately selects an H.264 MP4 first.
+        # When ffprobe is unavailable, preserve a completed MP4 instead of
+        # failing after the download has already succeeded.
+        return True
     streams = ffprobe_streams(path)
     video = next((stream for stream in streams if stream.get("codec_type") == "video"), None)
     audio = next((stream for stream in streams if stream.get("codec_type") == "audio"), None)
@@ -668,7 +767,7 @@ def transcode_command(path: Path, temp_path: Path, *, hardware_encoder: str | No
         ]
     )
     return [
-        "ffmpeg",
+        resolve_media_tool("ffmpeg") or "ffmpeg",
         "-y",
         "-hide_banner",
         "-loglevel",
@@ -782,7 +881,7 @@ def upload_compression_command(path: Path, output_path: Path, *, duration: float
         )
 
     return [
-        "ffmpeg",
+        resolve_media_tool("ffmpeg") or "ffmpeg",
         "-y",
         "-hide_banner",
         "-loglevel",
@@ -1011,16 +1110,16 @@ def ydl_options(
         opts["http_headers"]["Referer"] = "https://www.douyin.com/"
     if platform_id == "youtube" and shutil.which("node"):
         opts["js_runtimes"] = {"node": {}}
-    if cookie_source == "bilibili":
-        if platform_id != "bilibili":
-            raise DownloadError("扫码登录 B 站只能用于哔哩哔哩链接。")
+    if cookie_source == "bilibili" and platform_id == "bilibili":
         try:
             # An in-memory Netscape cookie file keeps credentials available to
             # both www.bilibili.com and api.bilibili.com without touching disk.
             opts["cookiefile"] = bilibili_auth.cookie_file()
         except BilibiliAuthError as exc:
             raise DownloadError(str(exc)) from exc
-    elif cookie_source != "none":
+    elif cookie_source == "bilibili" and platform_id != "douyin":
+        raise DownloadError("扫码登录 B 站只能用于哔哩哔哩链接。")
+    elif cookie_source != "none" and platform_id != "douyin":
         opts["cookiesfrombrowser"] = (cookie_source,)
     return opts
 
@@ -1039,7 +1138,7 @@ def probe_url(
 
     try:
         with yt_dlp.YoutubeDL(options) as ydl:
-            info = extract_info_with_retries(ydl, url, download=False)
+            info = extract_info_with_platform_fallback(ydl, url, download=False)
     except Exception as exc:
         raise DownloadError(readable_error(exc)) from exc
 
@@ -1137,7 +1236,7 @@ def download_url(
             probe_options = ydl_options(cookie_source, download_scope, url=url)
             probe_options["skip_download"] = True
             with yt_dlp.YoutubeDL(probe_options) as ydl:
-                playlist_info = extract_info_with_retries(
+                playlist_info = extract_info_with_platform_fallback(
                     ydl,
                     url,
                     download=False,
@@ -1201,7 +1300,7 @@ def download_url(
                             status="running",
                             message=f"正在下载第 {index}/{len(entry_urls)} 个视频",
                         )
-                        extract_info_with_retries(
+                        extract_info_with_platform_fallback(
                             ydl,
                             entry_url,
                             download=True,
@@ -1210,7 +1309,7 @@ def download_url(
                         )
                     output_path = str(destination)
                 else:
-                    info = extract_info_with_retries(
+                    info = extract_info_with_platform_fallback(
                         ydl,
                         url,
                         download=True,
