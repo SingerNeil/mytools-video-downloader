@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from app.downloader import (
+    bilibili_format_for_quality,
     ffmpeg_available,
     normalize_cookie_source,
     platform_name,
@@ -47,6 +48,18 @@ class CrossPlatformTests(unittest.TestCase):
     def test_firefox_cookie_source_is_supported(self) -> None:
         self.assertEqual(normalize_cookie_source("firefox"), "firefox")
         self.assertEqual(ydl_options("firefox")["cookiesfrombrowser"], ("firefox",))
+
+    def test_bilibili_qr_session_is_loaded_as_cookie_header(self) -> None:
+        url = "https://www.bilibili.com/video/BV1xx411c7mD"
+        with patch("app.downloader.bilibili_auth.cookie_header", return_value="SESSDATA=test"):
+            options = ydl_options("bilibili", url=url)
+
+        self.assertEqual(options["http_headers"]["Cookie"], "SESSDATA=test")
+
+    def test_bilibili_8k_quality_keeps_the_highest_stream_below_4320p(self) -> None:
+        selected_format = bilibili_format_for_quality("4320p")
+
+        self.assertIn("height<=4320", selected_format)
 
     def test_platform_labels(self) -> None:
         with patch("app.downloader.sys.platform", "darwin"), patch("app.downloader.os.name", "posix"):

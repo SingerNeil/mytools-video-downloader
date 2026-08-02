@@ -27,6 +27,7 @@
             <span>登录状态</span>
             <select id="cookieSource">
               <option value="none">不使用登录状态</option>
+              <option value="bilibili">扫码登录 B 站（最高画质推荐）</option>
               <option value="firefox">读取 Firefox 登录状态（Windows 推荐）</option>
               <option value="chrome">读取 Chrome 登录状态</option>
             </select>
@@ -39,6 +40,23 @@
               <option value="collection">下载整个合集/列表</option>
             </select>
           </label>
+        </div>
+
+        <div id="bilibiliAuthPanel" class="auth-panel" hidden>
+          <div class="auth-head">
+            <div>
+              <strong>B 站扫码登录</strong>
+              <p id="bilibiliAuthStatus">登录信息仅保存在本次工具运行的内存中。</p>
+            </div>
+            <div class="auth-actions">
+              <button id="bilibiliLoginBtn" type="button">生成登录二维码</button>
+              <button id="bilibiliLogoutBtn" type="button" class="danger" hidden>退出 B 站登录</button>
+            </div>
+          </div>
+          <div id="bilibiliQrArea" class="qr-area" hidden>
+            <img id="bilibiliQrImage" alt="B站登录二维码" />
+            <p>请使用哔哩哔哩手机客户端扫码并确认登录。二维码约 3 分钟后过期。</p>
+          </div>
         </div>
 
         <div class="grid">
@@ -59,6 +77,7 @@
             <select id="quality">
               <option value="best">最高可用画质</option>
               <option value="60fps">优先 60 帧</option>
+              <option value="4320p">4320P / 8K</option>
               <option value="2160p">2160P / 4K</option>
               <option value="1440p">1440P / 2K</option>
               <option value="1080p">1080P</option>

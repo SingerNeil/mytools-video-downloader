@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from .bilibili_auth import BilibiliAuthError, bilibili_auth
 from .downloader import (
     DownloadError,
     VIDEO_EXTENSIONS,
@@ -81,7 +82,34 @@ def health() -> dict[str, object]:
         "default_output_dir": settings["output_dir"],
         "platform": platform_name(),
         "dependency_install_hint": dependency_install_hint(),
+        "bilibili_auth": bilibili_auth.status(),
     }
+
+
+@app.get("/api/bilibili/auth")
+def bilibili_auth_status() -> dict[str, object]:
+    return bilibili_auth.status()
+
+
+@app.post("/api/bilibili/auth/qr")
+def bilibili_auth_qr() -> dict[str, object]:
+    try:
+        return bilibili_auth.start_qr_login()
+    except BilibiliAuthError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.get("/api/bilibili/auth/qr/{qr_key}")
+def bilibili_auth_qr_status(qr_key: str) -> dict[str, object]:
+    try:
+        return bilibili_auth.poll_qr_login(qr_key)
+    except BilibiliAuthError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+@app.post("/api/bilibili/auth/logout")
+def bilibili_auth_logout() -> dict[str, object]:
+    return bilibili_auth.logout()
 
 
 @app.post("/api/settings")

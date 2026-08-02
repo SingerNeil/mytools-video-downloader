@@ -18,13 +18,14 @@ from uuid import uuid4
 
 import yt_dlp
 
+from .bilibili_auth import BilibiliAuthError, bilibili_auth
 from .jobs import jobs
 
 
 DEFAULT_OUTPUT_DIR = Path.home() / "Downloads" / "MyToolsVideos"
-SUPPORTED_COOKIE_SOURCES = {"none", "chrome", "firefox"}
+SUPPORTED_COOKIE_SOURCES = {"none", "bilibili", "chrome", "firefox"}
 SUPPORTED_DOWNLOAD_SCOPES = {"single", "collection"}
-SUPPORTED_QUALITIES = {"best", "60fps", "2160p", "1440p", "1080p", "720p", "480p", "360p"}
+SUPPORTED_QUALITIES = {"best", "60fps", "4320p", "2160p", "1440p", "1080p", "720p", "480p", "360p"}
 SUPPORTED_COMPRESSION_TARGETS_MB = {0, 15, 25, 50}
 RESERVED_FILENAMES = {
     ".",
@@ -127,7 +128,7 @@ def normalize_cookie_source(cookie_source: str | None) -> str:
     if source not in SUPPORTED_COOKIE_SOURCES:
         raise DownloadError(
             "不支持这个登录状态选项，请选择“不使用登录状态”、"
-            "“读取 Firefox 登录状态”或“读取 Chrome 登录状态”。"
+            "“扫码登录 B 站”、“读取 Firefox 登录状态”或“读取 Chrome 登录状态”。"
         )
     return source
 
@@ -500,6 +501,8 @@ def transcode_bitrate(path: Path) -> str:
     streams = ffprobe_streams(path)
     video = next((stream for stream in streams if stream.get("codec_type") == "video"), None)
     height = int(video.get("height") or 0) if video else 0
+    if height >= 4320:
+        return "60M"
     if height >= 2160:
         return "24M"
     if height >= 1440:
@@ -1008,7 +1011,14 @@ def ydl_options(
         opts["http_headers"]["Referer"] = "https://www.douyin.com/"
     if platform_id == "youtube" and shutil.which("node"):
         opts["js_runtimes"] = {"node": {}}
-    if cookie_source != "none":
+    if cookie_source == "bilibili":
+        if platform_id != "bilibili":
+            raise DownloadError("扫码登录 B 站只能用于哔哩哔哩链接。")
+        try:
+            opts["http_headers"]["Cookie"] = bilibili_auth.cookie_header()
+        except BilibiliAuthError as exc:
+            raise DownloadError(str(exc)) from exc
+    elif cookie_source != "none":
         opts["cookiesfrombrowser"] = (cookie_source,)
     return opts
 

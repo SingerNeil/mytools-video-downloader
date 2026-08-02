@@ -2,3 +2,5 @@ fastapi==0.115.6
 uvicorn[standard]==0.34.0
 yt-dlp[default]>=2026.3.17
 python-multipart>=0.0.20
+qrcode[pil]>=8.0
+requests>=2.32.2

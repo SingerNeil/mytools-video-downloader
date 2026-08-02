@@ -18,11 +18,18 @@ const message = document.querySelector("#message");
 const title = document.querySelector("#title");
 const savedFile = document.querySelector("#savedFile");
 const log = document.querySelector("#log");
+const bilibiliAuthPanel = document.querySelector("#bilibiliAuthPanel");
+const bilibiliAuthStatus = document.querySelector("#bilibiliAuthStatus");
+const bilibiliLoginBtn = document.querySelector("#bilibiliLoginBtn");
+const bilibiliLogoutBtn = document.querySelector("#bilibiliLogoutBtn");
+const bilibiliQrArea = document.querySelector("#bilibiliQrArea");
+const bilibiliQrImage = document.querySelector("#bilibiliQrImage");
 
 let pollTimer = null;
 let saveOutputDirTimer = null;
 let lastLinkDefaultsKey = "";
 let currentJobId = null;
+let bilibiliAuthPollTimer = null;
 
 const stateLabels = {
   queued: "排队中",
@@ -77,6 +84,88 @@ function setState(state) {
 function updateProgress(value) {
   const progress = Math.max(0, Math.min(100, Number(value) || 0));
   progressBar.style.width = `${progress}%`;
+}
+
+function showBilibiliAuthPanel() {
+  bilibiliAuthPanel.hidden = cookieSource.value !== "bilibili";
+}
+
+function renderBilibiliAuth(auth) {
+  const authenticated = Boolean(auth && auth.authenticated);
+  const user = auth && auth.user;
+  bilibiliLoginBtn.hidden = authenticated;
+  bilibiliLoginBtn.disabled = false;
+  bilibiliLogoutBtn.hidden = !authenticated;
+  if (authenticated) {
+    const vipText = user && user.vip ? "大会员" : "普通会员";
+    bilibiliAuthStatus.textContent = `已登录：${user && user.name ? user.name : "B站用户"}（${vipText}）`;
+    bilibiliQrArea.hidden = true;
+  } else {
+    bilibiliAuthStatus.textContent = "未登录。登录信息仅保存在本次工具运行的内存中。";
+  }
+}
+
+async function pollBilibiliAuth(qrKey) {
+  window.clearTimeout(bilibiliAuthPollTimer);
+  try {
+    const response = await fetch(`/api/bilibili/auth/qr/${encodeURIComponent(qrKey)}`);
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data.detail || "检查扫码状态失败");
+    }
+    bilibiliAuthStatus.textContent = data.message || "等待扫码";
+    if (data.state === "authenticated") {
+      renderBilibiliAuth({ authenticated: true, user: data.user });
+      cookieSource.value = "bilibili";
+      showBilibiliAuthPanel();
+      writeLog(`B 站扫码登录成功：${data.user && data.user.name ? data.user.name : "已登录"}`);
+      return;
+    }
+    if (data.state === "expired") {
+      bilibiliLoginBtn.disabled = false;
+      bilibiliQrArea.hidden = true;
+      return;
+    }
+    bilibiliAuthPollTimer = window.setTimeout(() => pollBilibiliAuth(qrKey), 2000);
+  } catch (error) {
+    bilibiliAuthStatus.textContent = error.message;
+    bilibiliLoginBtn.disabled = false;
+    writeLog(`B 站扫码登录失败：${error.message}`);
+  }
+}
+
+async function startBilibiliLogin() {
+  window.clearTimeout(bilibiliAuthPollTimer);
+  bilibiliLoginBtn.disabled = true;
+  bilibiliAuthStatus.textContent = "正在生成登录二维码...";
+  try {
+    const response = await fetch("/api/bilibili/auth/qr", { method: "POST" });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(data.detail || "生成 B 站登录二维码失败");
+    }
+    bilibiliQrImage.src = data.image_data_url;
+    bilibiliQrArea.hidden = false;
+    bilibiliAuthStatus.textContent = "等待扫码";
+    pollBilibiliAuth(data.qrcode_key);
+  } catch (error) {
+    bilibiliAuthStatus.textContent = error.message;
+    bilibiliLoginBtn.disabled = false;
+    writeLog(`生成 B 站登录二维码失败：${error.message}`);
+  }
+}
+
+async function logoutBilibili() {
+  window.clearTimeout(bilibiliAuthPollTimer);
+  const response = await fetch("/api/bilibili/auth/logout", { method: "POST" });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.detail || "退出 B 站登录失败");
+  }
+  renderBilibiliAuth(data);
+  cookieSource.value = "none";
+  showBilibiliAuthPanel();
+  writeLog("已清除本次运行中的 B 站登录信息。");
 }
 
 function extractFirstUrl(value) {
@@ -190,6 +279,7 @@ async function loadHealth() {
   const response = await fetch("/api/health");
   const data = await response.json();
   outputDir.value = data.default_output_dir || "";
+  renderBilibiliAuth(data.bilibili_auth || { authenticated: false });
   if (data.ffmpeg_available) {
     envBadge.textContent = "ffmpeg 已就绪";
     envBadge.className = "badge";
@@ -373,6 +463,11 @@ probeBtn.addEventListener("click", probe);
 downloadBtn.addEventListener("click", startDownload);
 compressLocalBtn.addEventListener("click", startLocalCompression);
 cancelBtn.addEventListener("click", cancelDownload);
+bilibiliLoginBtn.addEventListener("click", startBilibiliLogin);
+bilibiliLogoutBtn.addEventListener("click", () => {
+  logoutBilibili().catch((error) => writeLog(error.message));
+});
+cookieSource.addEventListener("change", showBilibiliAuthPanel);
 urlInput.addEventListener("input", applyLinkDefaults);
 urlInput.addEventListener("paste", () => {
   window.setTimeout(applyLinkDefaults, 0);
@@ -391,3 +486,4 @@ loadHealth().catch((error) => {
   envBadge.className = "badge warn";
   writeLog(error.message);
 });
+showBilibiliAuthPanel();
