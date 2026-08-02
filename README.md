@@ -1,6 +1,6 @@
 # MyTools 视频下载与压缩工具
 
-一个运行在 macOS 本地的中文网页工具。粘贴视频链接或分享文本后，可以检测链接、选择清晰度、下载单个视频或整个合集，并将结果保存到本地。
+一个可在 Windows、macOS 和 Linux 本地运行的中文网页工具。粘贴视频链接或分享文本后，可以检测链接、选择清晰度、下载单个视频或整个合集，并将结果保存到本地。
 
 下载引擎使用 [`yt-dlp`](https://github.com/yt-dlp/yt-dlp)，目前针对以下平台提供支持：
 
@@ -19,9 +19,9 @@
 - 自动判断普通单视频、YouTube 播放列表和 B 站多 P/合集链接。
 - 支持仅下载当前视频或下载整个合集/列表。
 - 支持最高画质、优先 60 帧、4K、2K、1080P、720P、480P 和 360P。
-- 可以读取 Chrome 登录状态，下载当前账号有权限观看的内容。
+- 可以读取 Firefox 或 Chrome 登录状态，下载当前账号有权限观看的内容。
 - YouTube 最高画质会优先选择真实的 2K/4K 视频流。
-- 自动将 AV1、VP9、WebM、MKV 等格式转换为 Mac 更容易播放的 H.264/AAC MP4。
+- 自动将 AV1、VP9、WebM、MKV 等格式转换为 Windows 和 macOS 均可直接播放的 H.264/AAC MP4。
 - YouTube 使用 MKV 作为中间合并容器，避免直接合并 4K MP4 时生成损坏文件。
 - 下载失败时支持网络重试、坏文件检测和半成品清理。
 - 页面显示下载、合并、转码和压缩进度，并支持停止当前任务。
@@ -32,20 +32,32 @@
 
 ## 环境要求
 
-- macOS，支持 Apple Silicon 和 Intel Mac
+- Windows 10/11（x64），或 macOS（Apple Silicon / Intel）；Linux 也可使用
 - Python 3.10 或更高版本，推荐 Python 3.12
-- Homebrew
 - `ffmpeg` 和 `ffprobe`
 - Node.js 22 或更高版本，用于 YouTube 页面解析
-- Chrome，可选；需要读取网站登录状态时使用
+- Firefox 或 Chrome，可选；需要读取网站登录状态时使用。Windows 推荐 Firefox
 
-安装必要工具：
+### Windows 安装环境
+
+打开 PowerShell 或 Windows Terminal：
+
+```powershell
+winget install --id Python.Python.3.12 --exact
+winget install --id Gyan.FFmpeg --exact
+winget install --id OpenJS.NodeJS.LTS --exact
+winget install --id Mozilla.Firefox --exact
+```
+
+安装后关闭并重新打开终端，使新的 `PATH` 生效。不要使用 Microsoft Store 的空 `python.exe` 占位程序；`run.bat` 会优先使用官方 Python 的 `py` 启动器。
+
+### macOS 安装环境
 
 ```bash
 brew install python@3.12 ffmpeg node
 ```
 
-确认环境：
+Windows 和 macOS 都可以用以下命令确认核心工具（Windows 上 Python 也可运行 `py -3.12 --version`）：
 
 ```bash
 python3.12 --version
@@ -56,14 +68,25 @@ node --version
 
 ## 第一次启动
 
-在终端运行：
+### Windows
+
+在资源管理器中双击 `run.bat`，或在 PowerShell 中进入项目目录后运行：
+
+```powershell
+.\run.bat
+```
+
+`run.bat` 会调用 `run.ps1`，自动寻找 Python 3.10+、创建 Windows 虚拟环境、安装依赖并启动服务。即使系统 PowerShell 执行策略较严格，也不需要手动修改全局执行策略。
+
+### macOS / Linux
+
+在终端进入项目目录后运行：
 
 ```bash
-cd /Users/ming/codes/My_Tools/video_downloader
 ./run.sh
 ```
 
-`run.sh` 会自动完成以下工作：
+两个平台的启动脚本都会自动完成以下工作：
 
 1. 选择可用的 Python。
 2. 创建或复用项目中的 `.venv` 虚拟环境。
@@ -82,16 +105,17 @@ http://127.0.0.1:8765
 PYTHON_BIN=/opt/homebrew/bin/python3.12 ./run.sh
 ```
 
+Windows PowerShell：
+
+```powershell
+$env:PYTHON_BIN = "C:\Path\To\Python312\python.exe"
+.\run.bat
+```
+
 ## 日常使用 SOP
 
 1. 打开终端。
-2. 进入项目目录并启动：
-
-   ```bash
-   cd /Users/ming/codes/My_Tools/video_downloader
-   ./run.sh
-   ```
-
+2. 进入项目目录并启动：Windows 运行 `run.bat`，macOS/Linux 运行 `./run.sh`。
 3. 保持终端窗口运行，不要关闭。
 4. 浏览器访问 `http://127.0.0.1:8765`。
 5. 粘贴视频链接或整段分享文本。
@@ -106,7 +130,7 @@ PYTHON_BIN=/opt/homebrew/bin/python3.12 ./run.sh
 9. 点击“开始下载”。
 10. 等待页面显示“已完成”，然后到“保存文件”显示的目录查看结果。
 
-需要停止当前任务时，点击页面中的“停止任务”。停止整个本地服务时，在启动服务的终端按 `Control + C`。
+需要停止当前任务时，点击页面中的“停止任务”。停止整个本地服务时，在启动服务的终端按 `Ctrl+C`（macOS 也可理解为 `Control+C`）。
 
 ## 抖音下载
 
@@ -123,7 +147,7 @@ PYTHON_BIN=/opt/homebrew/bin/python3.12 ./run.sh
 如果短链、私密内容或风控页面无法解析：
 
 1. 先在 Chrome 中登录抖音。
-2. 回到工具，选择“读取 Chrome 登录状态”。
+2. 回到工具，选择对应浏览器的登录状态；Windows 推荐 Firefox。
 3. 重新检测并下载。
 
 抖音页面和接口变化较频繁，个别链接可能需要更新 `yt-dlp` 后才能继续使用。
@@ -157,19 +181,28 @@ PYTHON_BIN=/opt/homebrew/bin/python3.12 ./run.sh
 - `1440P / 2K`：最高限制为 1440P。
 - `1080P`、`720P`、`480P`、`360P`：限制最高视频高度。
 
-YouTube 的 2K/4K 通常是视频流和音频流分开下载，并可能使用 AV1、VP9 或 Opus。工具会先用 MKV 合并，再转换为 Mac 更容易播放的 H.264/AAC MP4。长视频的转换阶段可能需要较长时间，页面会持续显示进度。
+YouTube 的 2K/4K 通常是视频流和音频流分开下载，并可能使用 AV1、VP9 或 Opus。工具会先用 MKV 合并，再转换为 Windows 和 macOS 均兼容的 H.264/AAC MP4。macOS 会优先尝试 VideoToolbox 硬件编码，失败后回退到 libx264；Windows/Linux 默认使用兼容性稳定的 libx264。长视频的转换阶段可能需要较长时间，页面会持续显示进度。
 
 会员画质和登录后内容取决于账号本身的观看权限。
 
-## Chrome 登录状态
+## 浏览器登录状态
 
-工具不会保存用户名或密码。“读取 Chrome 登录状态”会让 `yt-dlp` 读取当前 Mac 上 Chrome 的网站 Cookie。
+工具不会保存用户名或密码。“读取浏览器登录状态”会让 `yt-dlp` 读取当前电脑上对应浏览器的网站 Cookie。
+
+Windows 推荐使用 Firefox：
+
+1. 安装并打开 Firefox。
+2. 在 Firefox 中登录哔哩哔哩，确认网页能播放账号有权限观看的最高画质。
+3. 回到工具，选择“读取 Firefox 登录状态（Windows 推荐）”。
+4. 检测链接并选择“最高可用画质”后下载。
+
+如果使用 Chrome，Windows 上必须先完全退出 Chrome，包括任务管理器中的后台 `chrome.exe`；否则 Chrome 会锁定 Cookie 数据库。macOS 通常可以直接读取 Chrome Cookie，但可能弹出钥匙串授权。
 
 使用前：
 
-1. 在 Chrome 中登录目标网站。
-2. 保持 Chrome 登录状态有效。
-3. 在工具中选择“读取 Chrome 登录状态”。
+1. 在 Firefox 或 Chrome 中登录目标网站。
+2. 保持登录状态有效。
+3. 在工具中选择对应浏览器的登录状态。
 
 当公开链接能够正常下载时，优先使用“不使用登录状态”。
 
@@ -205,10 +238,11 @@ YouTube 的 2K/4K 通常是视频流和音频流分开下载，并可能使用 A
 
 ## 保存位置
 
-代码中的默认保存目录是：
+代码中的默认保存目录是当前用户的 Downloads 文件夹：
 
 ```text
-~/Downloads/MyToolsVideos
+Windows: C:\Users\<用户名>\Downloads\MyToolsVideos
+macOS:   /Users/<用户名>/Downloads/MyToolsVideos
 ```
 
 在页面修改保存位置后，项目会将设置写入：
@@ -246,31 +280,32 @@ Uvicorn running on http://127.0.0.1:8765
 
 ### 缺少 ffmpeg
 
+Windows：
+
+```powershell
+winget install --id Gyan.FFmpeg --exact
+```
+
+macOS：
+
 ```bash
 brew install ffmpeg
 ```
 
 ### YouTube 没有返回可下载格式
 
-```bash
-brew install node
-cd /Users/ming/codes/My_Tools/video_downloader
-. .venv/bin/activate
-python -m pip install --upgrade "yt-dlp[default]"
-```
-
-然后停止并重新运行 `./run.sh`。
+确认已经安装 Node.js 22+，然后停止服务并重新运行 `run.bat`（Windows）或 `./run.sh`（macOS/Linux）。启动脚本会根据 `requirements.txt` 安装或更新 `yt-dlp[default]`。
 
 ### 抖音或小红书检测失败
 
 - 尝试粘贴完整分享文本。
 - 在 Chrome 中登录对应网站。
-- 选择“读取 Chrome 登录状态”。
+- 选择对应浏览器的登录状态；Windows 推荐 Firefox。
 - 更新 `yt-dlp` 后重启工具。
 
 ### 任务停在 95% 附近
 
-这通常表示视频已经下载完成，正在合并、转换为 Mac 兼容 MP4，或生成上传压缩版。4K 和长视频可能需要较长时间。页面会显示转换百分比；连续 5 分钟没有任何媒体进度时，工具会自动停止。
+这通常表示视频已经下载完成，正在合并、转换为通用 H.264/AAC MP4，或生成上传压缩版。4K 和长视频可能需要较长时间。页面会显示转换百分比；连续 5 分钟没有任何媒体进度时，工具会自动停止。
 
 ### 文件损坏或出现 `moov atom not found`
 
@@ -278,11 +313,7 @@ python -m pip install --upgrade "yt-dlp[default]"
 
 ## 更新依赖
 
-```bash
-cd /Users/ming/codes/My_Tools/video_downloader
-. .venv/bin/activate
-python -m pip install --upgrade "yt-dlp[default]"
-```
+直接停止服务并重新运行平台对应的启动脚本即可；脚本每次都会根据 `requirements.txt` 检查并安装依赖。若要手动更新，Windows 使用 `.venv\Scripts\python.exe -m pip install --upgrade "yt-dlp[default]"`，macOS/Linux 使用 `.venv/bin/python -m pip install --upgrade "yt-dlp[default]"`。
 
 ## 使用限制
 

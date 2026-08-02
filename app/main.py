@@ -15,9 +15,11 @@ from .downloader import (
     VIDEO_EXTENSIONS,
     compress_local_video,
     download_url,
+    dependency_install_hint,
     ffmpeg_available,
     normalize_compression_target,
     probe_url,
+    platform_name,
     safe_path_name,
     youtube_ejs_available,
 )
@@ -77,6 +79,8 @@ def health() -> dict[str, object]:
         "ffmpeg_available": ffmpeg_available(),
         "youtube_ejs_available": youtube_ejs_available(),
         "default_output_dir": settings["output_dir"],
+        "platform": platform_name(),
+        "dependency_install_hint": dependency_install_hint(),
     }
 
 

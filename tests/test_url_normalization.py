@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from app.downloader import extract_first_url, format_for_url, validate_url
+from app.downloader import extract_first_url, format_for_url, merge_output_format_for_url, validate_url
 
 
 DOUYIN_VIDEO_URL = "https://www.douyin.com/video/7650469260520087209"
@@ -57,6 +57,12 @@ class UrlNormalizationTests(unittest.TestCase):
         selector = format_for_url("720p", DOUYIN_VIDEO_URL)
 
         self.assertIn("[width<=1280][height<=1280][vcodec^=h264]", selector)
+
+    def test_bilibili_best_does_not_prefer_lower_resolution_h264(self) -> None:
+        url = "https://www.bilibili.com/video/BV1xx411c7mD"
+
+        self.assertEqual(format_for_url("best", url), "bv*+ba/b")
+        self.assertEqual(merge_output_format_for_url(url), "mkv")
 
 
 if __name__ == "__main__":

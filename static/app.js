@@ -40,7 +40,7 @@ const messageLabels = {
   "Preparing download": "正在准备下载",
   Downloading: "正在下载",
   "Merging and finalizing": "正在合并并整理文件",
-  "Converting to Mac-compatible H.264 MP4": "正在转换为 Mac 可播放的 H.264 MP4",
+  "Converting to Mac-compatible H.264 MP4": "正在转换为通用 H.264/AAC MP4",
   Completed: "下载完成",
   Failed: "下载失败",
   "任务已停止": "任务已停止",
@@ -196,10 +196,10 @@ async function loadHealth() {
   } else {
     envBadge.textContent = "缺少 ffmpeg";
     envBadge.className = "badge warn";
-    writeLog("缺少 ffmpeg，高清下载和格式转换需要先安装：brew install ffmpeg");
+    writeLog(`缺少 ffmpeg/ffprobe，高清下载和格式转换需要先安装。${data.dependency_install_hint || ""}`);
   }
   if (!data.youtube_ejs_available) {
-    writeLog("YouTube 下载需要 Node 22+ 和 yt-dlp-ejs；请停止服务后重新运行 ./run.sh 安装依赖。");
+    writeLog("YouTube 下载需要 Node 22+ 和 yt-dlp-ejs；请停止服务后重新运行当前系统的启动脚本安装依赖。");
   }
 }
 
@@ -222,7 +222,7 @@ async function probe() {
     message.textContent = `检测成功：${platformText}${data.extractor || "解析器"} 找到 ${data.format_count || 0} 个可用格式${scopeText}。`;
     writeLog(`检测成功：${data.title || data.webpage_url}`);
     if (!data.ffmpeg_available) {
-      writeLog("缺少 ffmpeg，请运行：brew install ffmpeg");
+      writeLog(`缺少 ffmpeg/ffprobe。${data.dependency_install_hint || "请参考 README 安装。"}`);
     }
     setState("ready");
   } catch (error) {

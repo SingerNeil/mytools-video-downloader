@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -14,7 +15,7 @@ SETTINGS_PATH = ROOT_DIR / "user_settings.json"
 def normalize_output_dir(output_dir: str | None) -> str:
     if not output_dir or not output_dir.strip():
         return str(DEFAULT_OUTPUT_DIR)
-    return str(Path(output_dir.strip()).expanduser())
+    return str(Path(os.path.expandvars(output_dir.strip())).expanduser())
 
 
 def load_settings() -> dict[str, str]:

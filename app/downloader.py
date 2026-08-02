@@ -3,12 +3,15 @@ from __future__ import annotations
 import html
 import importlib.util
 import json
+import os
 import re
-import select
 import shutil
 import subprocess
+import sys
 import time
 from pathlib import Path
+from queue import Empty, Queue
+from threading import Thread
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 from uuid import uuid4
@@ -19,11 +22,20 @@ from .jobs import jobs
 
 
 DEFAULT_OUTPUT_DIR = Path.home() / "Downloads" / "MyToolsVideos"
-SUPPORTED_COOKIE_SOURCES = {"none", "chrome"}
+SUPPORTED_COOKIE_SOURCES = {"none", "chrome", "firefox"}
 SUPPORTED_DOWNLOAD_SCOPES = {"single", "collection"}
 SUPPORTED_QUALITIES = {"best", "60fps", "2160p", "1440p", "1080p", "720p", "480p", "360p"}
 SUPPORTED_COMPRESSION_TARGETS_MB = {0, 15, 25, 50}
-RESERVED_MAC_FILENAMES = {".", ".."}
+RESERVED_FILENAMES = {
+    ".",
+    "..",
+    "CON",
+    "PRN",
+    "AUX",
+    "NUL",
+    *(f"COM{index}" for index in range(1, 10)),
+    *(f"LPT{index}" for index in range(1, 10)),
+}
 VIDEO_EXTENSIONS = {".mp4", ".m4v", ".mov", ".mkv", ".webm"}
 DOWNLOAD_PROGRESS_LIMIT = 95.0
 TRANSCODE_PROGRESS_START = 95.0
@@ -45,7 +57,7 @@ DEFAULT_HTTP_HEADERS = {
 }
 
 
-def mac_compatible_format(height: int | None = None, prefer_60fps: bool = False) -> str:
+def playback_compatible_format(height: int | None = None, prefer_60fps: bool = False) -> str:
     height_filter = f"[height<={height}]" if height else ""
     fps_filter = "[fps>=50]" if prefer_60fps else ""
     relaxed_fps_filter = "[fps<=60]" if prefer_60fps else ""
@@ -66,12 +78,32 @@ def mac_compatible_format(height: int | None = None, prefer_60fps: bool = False)
     )
 
 
+# Kept as a compatibility alias for callers that imported the old name.
+mac_compatible_format = playback_compatible_format
+
+
 class DownloadError(RuntimeError):
     pass
 
 
 def ffmpeg_available() -> bool:
-    return shutil.which("ffmpeg") is not None
+    return shutil.which("ffmpeg") is not None and shutil.which("ffprobe") is not None
+
+
+def platform_name() -> str:
+    if sys.platform == "darwin":
+        return "macOS"
+    if os.name == "nt":
+        return "Windows"
+    return "Linux"
+
+
+def dependency_install_hint() -> str:
+    if os.name == "nt":
+        return "请运行：winget install --id Gyan.FFmpeg --exact"
+    if sys.platform == "darwin":
+        return "请运行：brew install ffmpeg"
+    return "请使用系统包管理器安装 ffmpeg（必须同时包含 ffprobe）"
 
 
 def youtube_ejs_available() -> bool:
@@ -80,17 +112,23 @@ def youtube_ejs_available() -> bool:
 
 def safe_path_name(value: str | None, fallback: str = "未命名合集") -> str:
     name = (value or fallback).strip()
-    name = re.sub(r'[\\/:*?"<>|\r\n\t]+', " ", name)
+    name = re.sub(r'[\\/:*?"<>|\x00-\x1f]+', " ", name)
     name = re.sub(r"\s+", " ", name).strip(" .")
-    if not name or name in RESERVED_MAC_FILENAMES:
+    reserved_stem = name.split(".", 1)[0].upper()
+    if not name or name in {".", ".."}:
         name = fallback
-    return name[:120].rstrip(" .") or fallback
+    elif reserved_stem in RESERVED_FILENAMES:
+        name = f"_{name}"
+    return name[:80].rstrip(" .") or fallback
 
 
 def normalize_cookie_source(cookie_source: str | None) -> str:
     source = cookie_source or "none"
     if source not in SUPPORTED_COOKIE_SOURCES:
-        raise DownloadError("不支持这个登录状态选项，请选择“不使用登录状态”或“读取 Chrome 登录状态”。")
+        raise DownloadError(
+            "不支持这个登录状态选项，请选择“不使用登录状态”、"
+            "“读取 Firefox 登录状态”或“读取 Chrome 登录状态”。"
+        )
     return source
 
 
@@ -118,13 +156,25 @@ def normalize_compression_target(target_mb: int | None) -> int:
 def format_for_quality(quality: str | None) -> str:
     selected = normalize_quality(quality)
     if selected == "60fps":
-        return mac_compatible_format(prefer_60fps=True)
+        return playback_compatible_format(prefer_60fps=True)
     if selected.endswith("p"):
-        return mac_compatible_format(int(selected.removesuffix("p")))
-    return mac_compatible_format()
+        return playback_compatible_format(int(selected.removesuffix("p")))
+    return playback_compatible_format()
 
 
 def youtube_format_for_quality(quality: str | None) -> str:
+    selected = normalize_quality(quality)
+    if selected == "60fps":
+        return "bv*[fps>=50]+ba/bv*[fps>=50]/bv*+ba/b"
+    if selected.endswith("p"):
+        height = int(selected.removesuffix("p"))
+        return f"bv*[height<={height}]+ba/b[height<={height}]/bv*[height<={height}]/b"
+    return "bv*+ba/b"
+
+
+def bilibili_format_for_quality(quality: str | None) -> str:
+    # Do not prefer a lower-resolution H.264 stream over a higher-resolution
+    # HEVC/AV1 stream. The selected result is converted to H.264/AAC later.
     selected = normalize_quality(quality)
     if selected == "60fps":
         return "bv*[fps>=50]+ba/bv*[fps>=50]/bv*+ba/b"
@@ -160,13 +210,15 @@ def format_for_url(quality: str | None, url: str) -> str:
     platform_id = detect_platform(url)["id"]
     if platform_id == "youtube":
         return youtube_format_for_quality(quality)
+    if platform_id == "bilibili":
+        return bilibili_format_for_quality(quality)
     if platform_id == "douyin":
         return douyin_format_for_quality(quality)
     return format_for_quality(quality)
 
 
 def merge_output_format_for_url(url: str) -> str:
-    if detect_platform(url)["id"] == "youtube":
+    if detect_platform(url)["id"] in {"youtube", "bilibili"}:
         return "mkv"
     return "mp4"
 
@@ -256,7 +308,7 @@ def normalize_url_for_scope(url: str, download_scope: str) -> str:
 def safe_output_dir(output_dir: str | None) -> Path:
     if not output_dir or not output_dir.strip():
         return DEFAULT_OUTPUT_DIR
-    return Path(output_dir).expanduser()
+    return Path(os.path.expandvars(output_dir.strip())).expanduser()
 
 
 def collection_output_dir(base_dir: Path, title: str | None) -> Path:
@@ -264,8 +316,9 @@ def collection_output_dir(base_dir: Path, title: str | None) -> Path:
 
 
 def cleanup_visible_transcode_temps(destination: Path) -> None:
-    for path in destination.glob("*.mac-compatible.tmp.mp4"):
-        path.unlink(missing_ok=True)
+    for pattern in ("*.compatible.tmp.mp4", "*.mac-compatible.tmp.mp4"):
+        for path in destination.glob(pattern):
+            path.unlink(missing_ok=True)
 
 
 def readable_error(exc: BaseException) -> str:
@@ -276,17 +329,22 @@ def readable_error(exc: BaseException) -> str:
     if "moov atom not found" in text or "Invalid data found when processing input" in text:
         return (
             "下载后的媒体文件不完整或已损坏，工具已避免继续转换这个坏文件。"
-            "请重新点击“开始下载”；如果连续出现，建议选择“读取 Chrome 登录状态”后再试。"
+            "请重新点击“开始下载”；如果连续出现，建议选择对应浏览器的登录状态后再试。"
         )
     if "Unsupported URL" in text:
         return "这个网站或链接格式暂时不支持。"
     if "n challenge solving failed" in text or "Requested format is not available" in text:
         return (
-            "YouTube 没有返回可下载的视频格式。请先停止服务并重新运行 ./run.sh，"
+            "YouTube 没有返回可下载的视频格式。请先停止服务并重新运行启动脚本，"
             "确保依赖安装完成；YouTube 下载需要 Node 22+ 和 yt-dlp-ejs。"
         )
+    if "Could not copy Chrome cookie database" in text:
+        return (
+            "Windows 上的 Chrome 正在占用登录 Cookie。请完全退出 Chrome（包括后台进程）后重试；"
+            "也可以在 Firefox 登录同一网站，然后选择“读取 Firefox 登录状态（Windows 推荐）”。"
+        )
     if "Private video" in text or "login" in text.lower():
-        return "这个视频可能需要登录。请先在 Chrome 里登录对应网站，然后选择“读取 Chrome 登录状态”。"
+        return "这个视频可能需要登录。请先在 Firefox 或 Chrome 登录对应网站，然后选择对应的登录状态。"
     if "DRM" in text.upper():
         return "这个视频可能有 DRM 版权保护，这个工具无法下载。"
     if text:
@@ -342,7 +400,7 @@ def extract_info_with_retries(
 
 def ffprobe_media_info(path: Path) -> dict[str, Any]:
     if not shutil.which("ffprobe"):
-        return {}
+        raise FileNotFoundError("找不到 ffprobe；" + dependency_install_hint())
 
     result = subprocess.run(
         [
@@ -358,6 +416,8 @@ def ffprobe_media_info(path: Path) -> dict[str, Any]:
         check=True,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
     )
     return json.loads(result.stdout)
 
@@ -367,6 +427,13 @@ def ffprobe_streams(path: Path) -> list[dict[str, Any]]:
 
 
 def is_readable_media_file(path: Path) -> bool:
+    if not shutil.which("ffprobe"):
+        # Without ffprobe we cannot validate codecs, but a non-empty completed
+        # file must not be mistaken for a corrupt download and deleted.
+        try:
+            return path.is_file() and path.stat().st_size > 0
+        except OSError:
+            return False
     try:
         ffprobe_media_info(path)
     except (subprocess.CalledProcessError, json.JSONDecodeError, OSError):
@@ -398,6 +465,8 @@ def ffprobe_duration(path: Path) -> float | None:
             check=False,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
         )
     except OSError:
         return None
@@ -409,7 +478,9 @@ def ffprobe_duration(path: Path) -> float | None:
     return value if value > 0 else None
 
 
-def is_mac_playable_mp4(path: Path) -> bool:
+def is_playback_compatible_mp4(path: Path) -> bool:
+    if path.suffix.lower() != ".mp4":
+        return False
     streams = ffprobe_streams(path)
     video = next((stream for stream in streams if stream.get("codec_type") == "video"), None)
     audio = next((stream for stream in streams if stream.get("codec_type") == "audio"), None)
@@ -419,6 +490,10 @@ def is_mac_playable_mp4(path: Path) -> bool:
     video_ok = video.get("codec_name") == "h264" and video.get("pix_fmt") in {None, "yuv420p"}
     audio_ok = audio is None or audio.get("codec_name") in {"aac", "mp3", "alac"}
     return video_ok and audio_ok
+
+
+# Kept as a compatibility alias for callers that imported the old name.
+is_mac_playable_mp4 = is_playback_compatible_mp4
 
 
 def transcode_bitrate(path: Path) -> str:
@@ -456,16 +531,65 @@ def run_ffmpeg_with_progress(
     progress_start: float = TRANSCODE_PROGRESS_START,
     progress_end: float = TRANSCODE_PROGRESS_END,
 ) -> None:
-    process = subprocess.Popen(
-        command,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        bufsize=1,
-    )
+    popen_options: dict[str, Any] = {
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.STDOUT,
+        "text": True,
+        "encoding": "utf-8",
+        "errors": "replace",
+        "bufsize": 1,
+    }
+    if os.name == "nt":
+        popen_options["creationflags"] = subprocess.CREATE_NO_WINDOW
+    process = subprocess.Popen(command, **popen_options)
     last_progress_change = time.monotonic()
     last_media_seconds = 0.0
     recent_output: list[str] = []
+    output_queue: Queue[str | None] = Queue()
+
+    def read_process_output() -> None:
+        try:
+            if process.stdout:
+                for output_line in iter(process.stdout.readline, ""):
+                    output_queue.put(output_line)
+        finally:
+            output_queue.put(None)
+
+    reader = Thread(target=read_process_output, name="ffmpeg-progress-reader", daemon=True)
+    reader.start()
+
+    def handle_output_line(output_line: str) -> None:
+        nonlocal last_media_seconds, last_progress_change
+        line = output_line.strip()
+        if line:
+            recent_output.append(line)
+            del recent_output[:-20]
+
+        key, _, value = line.partition("=")
+        if key in {"out_time_ms", "out_time_us"}:
+            try:
+                media_seconds = float(value) / 1_000_000
+            except ValueError:
+                media_seconds = last_media_seconds
+            if media_seconds > last_media_seconds + 0.2:
+                last_media_seconds = media_seconds
+                last_progress_change = time.monotonic()
+            if duration:
+                transcode_percent = max(0.0, min(100.0, media_seconds / duration * 100.0))
+                progress = progress_start + (progress_end - progress_start) * transcode_percent / 100.0
+                jobs.update(
+                    job_id,
+                    status="running",
+                    progress=progress,
+                    message=f"{message}（{transcode_percent:.1f}%）",
+                )
+        elif key == "progress" and value == "end":
+            jobs.update(
+                job_id,
+                status="running",
+                progress=progress_end,
+                message=f"{message}（整理文件）",
+            )
 
     try:
         while True:
@@ -473,53 +597,23 @@ def run_ffmpeg_with_progress(
                 terminate_process(process)
                 raise DownloadError("任务已停止。")
 
-            if process.stdout:
-                ready, _, _ = select.select([process.stdout], [], [], 1.0)
-            else:
-                ready = []
-
-            if ready and process.stdout:
-                line = process.stdout.readline()
-                if line:
-                    line = line.strip()
-                    if line:
-                        recent_output.append(line)
-                        recent_output = recent_output[-20:]
-
-                    key, _, value = line.partition("=")
-                    if key in {"out_time_ms", "out_time_us"}:
-                        try:
-                            media_seconds = float(value) / 1_000_000
-                        except ValueError:
-                            media_seconds = last_media_seconds
-                        if media_seconds > last_media_seconds + 0.2:
-                            last_media_seconds = media_seconds
-                            last_progress_change = time.monotonic()
-                        if duration:
-                            transcode_percent = max(0.0, min(100.0, media_seconds / duration * 100.0))
-                            progress = progress_start + (
-                                progress_end - progress_start
-                            ) * transcode_percent / 100.0
-                            jobs.update(
-                                job_id,
-                                status="running",
-                                progress=progress,
-                                message=f"{message}（{transcode_percent:.1f}%）",
-                            )
-                    elif key == "progress" and value == "end":
-                        jobs.update(
-                            job_id,
-                            status="running",
-                            progress=progress_end,
-                            message=f"{message}（整理文件）",
-                        )
+            try:
+                line = output_queue.get(timeout=0.5)
+            except Empty:
+                line = None
+            if line is not None:
+                handle_output_line(line)
 
             returncode = process.poll()
             if returncode is not None:
-                if process.stdout:
-                    remaining = process.stdout.read()
-                    if remaining:
-                        recent_output.extend(line.strip() for line in remaining.splitlines() if line.strip())
+                reader.join(timeout=2)
+                while True:
+                    try:
+                        remaining_line = output_queue.get_nowait()
+                    except Empty:
+                        break
+                    if remaining_line is not None:
+                        handle_output_line(remaining_line)
                 if returncode != 0:
                     raise subprocess.CalledProcessError(
                         returncode,
@@ -537,19 +631,30 @@ def run_ffmpeg_with_progress(
     except Exception:
         terminate_process(process)
         raise
+    finally:
+        reader.join(timeout=2)
+        if process.stdout:
+            process.stdout.close()
 
 
-def transcode_command(path: Path, temp_path: Path, *, hardware: bool) -> list[str]:
+def preferred_hardware_encoder() -> str | None:
+    # VideoToolbox is present in standard macOS ffmpeg builds. Windows/Linux
+    # hardware encoders depend on the installed GPU and driver, so libx264 is
+    # the reliable default there.
+    return "h264_videotoolbox" if sys.platform == "darwin" else None
+
+
+def transcode_command(path: Path, temp_path: Path, *, hardware_encoder: str | None = None) -> list[str]:
     encoder_args = (
         [
             "-c:v",
-            "h264_videotoolbox",
+            hardware_encoder,
             "-b:v",
             transcode_bitrate(path),
             "-profile:v",
             "high",
         ]
-        if hardware
+        if hardware_encoder
         else [
             "-c:v",
             "libx264",
@@ -589,17 +694,18 @@ def transcode_command(path: Path, temp_path: Path, *, hardware: bool) -> list[st
     ]
 
 
-def transcode_for_mac(path: Path, job_id: str) -> Path:
+def transcode_for_playback(path: Path, job_id: str) -> Path:
     if not ffmpeg_available():
-        raise DownloadError("需要 ffmpeg 才能转换成 Mac 可播放的视频。请先运行：brew install ffmpeg")
+        raise DownloadError("需要 ffmpeg 和 ffprobe 才能转换为兼容视频；" + dependency_install_hint())
 
     final_path = path if path.suffix.lower() == ".mp4" else path.with_suffix(".mp4")
     temp_dir = final_path.parent / ".mytools_tmp"
     temp_dir.mkdir(parents=True, exist_ok=True)
-    temp_path = temp_dir / f"{final_path.stem}.mac-compatible.tmp.mp4"
+    temp_path = temp_dir / f"{final_path.stem}.compatible.tmp.mp4"
     temp_path.unlink(missing_ok=True)
     duration = ffprobe_duration(path)
-    message = "正在转换为 Mac 可播放 MP4"
+    message = "正在转换为通用 H.264/AAC MP4"
+    hardware_encoder = preferred_hardware_encoder()
 
     try:
         jobs.update(
@@ -609,23 +715,31 @@ def transcode_for_mac(path: Path, job_id: str) -> Path:
             message=f"{message}（准备中，4K 视频可能需要较长时间）",
             output_path=str(final_path),
         )
-        try:
+        if hardware_encoder:
+            try:
+                run_ffmpeg_with_progress(
+                    transcode_command(path, temp_path, hardware_encoder=hardware_encoder),
+                    job_id=job_id,
+                    duration=duration,
+                    message=message,
+                )
+            except subprocess.CalledProcessError:
+                temp_path.unlink(missing_ok=True)
+                jobs.update(
+                    job_id,
+                    status="running",
+                    progress=TRANSCODE_PROGRESS_START,
+                    message=f"{message}（硬件转码失败，改用兼容模式）",
+                )
+                run_ffmpeg_with_progress(
+                    transcode_command(path, temp_path),
+                    job_id=job_id,
+                    duration=duration,
+                    message=message,
+                )
+        else:
             run_ffmpeg_with_progress(
-                transcode_command(path, temp_path, hardware=True),
-                job_id=job_id,
-                duration=duration,
-                message=message,
-            )
-        except subprocess.CalledProcessError as hardware_exc:
-            temp_path.unlink(missing_ok=True)
-            jobs.update(
-                job_id,
-                status="running",
-                progress=TRANSCODE_PROGRESS_START,
-                message=f"{message}（硬件转码失败，改用兼容模式）",
-            )
-            run_ffmpeg_with_progress(
-                transcode_command(path, temp_path, hardware=False),
+                transcode_command(path, temp_path),
                 job_id=job_id,
                 duration=duration,
                 message=message,
@@ -647,6 +761,10 @@ def transcode_for_mac(path: Path, job_id: str) -> Path:
     except Exception:
         temp_path.unlink(missing_ok=True)
         raise
+
+
+# Kept as a compatibility alias for callers that imported the old name.
+transcode_for_mac = transcode_for_playback
 
 
 def upload_compression_command(path: Path, output_path: Path, *, duration: float, target_mb: int) -> list[str]:
@@ -798,7 +916,7 @@ def compress_local_video(
             message="本地视频已接收，正在分析",
         )
 
-        if source_path.stat().st_size <= target_bytes and is_mac_playable_mp4(source_path):
+        if source_path.stat().st_size <= target_bytes and is_playback_compatible_mp4(source_path):
             shutil.copy2(source_path, output_path)
             jobs.update(
                 job_id,
@@ -890,8 +1008,8 @@ def ydl_options(
         opts["http_headers"]["Referer"] = "https://www.douyin.com/"
     if platform_id == "youtube" and shutil.which("node"):
         opts["js_runtimes"] = {"node": {}}
-    if cookie_source == "chrome":
-        opts["cookiesfrombrowser"] = ("chrome",)
+    if cookie_source != "none":
+        opts["cookiesfrombrowser"] = (cookie_source,)
     return opts
 
 
@@ -1034,7 +1152,7 @@ def download_url(
         options.update(
             {
                 "format": selected_format,
-                "outtmpl": str(destination / "%(title).180B [%(id)s].%(ext)s"),
+                "outtmpl": str(destination / "%(title).120B [%(id)s].%(ext)s"),
                 "merge_output_format": merge_output_format,
                 "progress_hooks": [progress_hook],
                 "windowsfilenames": True,
@@ -1109,7 +1227,7 @@ def download_url(
                 cleanup_invalid_downloads(invalid_paths, started_at=started_at)
                 raise DownloadError(
                     "下载后的媒体文件不完整或已损坏，已清理本次生成的半成品。"
-                    "请重新点击“开始下载”；如果连续出现，建议选择“读取 Chrome 登录状态”后再试。"
+                    "请重新点击“开始下载”；如果连续出现，建议选择对应浏览器的登录状态后再试。"
                 )
             break
 
@@ -1117,14 +1235,14 @@ def download_url(
             output_path = str(destination) if download_scope == "collection" else str(final_paths[0])
 
         for index, final_path in enumerate(final_paths):
-            if not is_mac_playable_mp4(final_path):
+            if not is_playback_compatible_mp4(final_path):
                 jobs.update(
                     job_id,
                     status="running",
                     progress=TRANSCODE_PROGRESS_START,
-                    message="正在转换为 Mac 可播放 MP4",
+                    message="正在转换为通用 H.264/AAC MP4",
                 )
-                final_paths[index] = transcode_for_mac(final_path, job_id)
+                final_paths[index] = transcode_for_playback(final_path, job_id)
 
         if compression_target_mb:
             for index, final_path in enumerate(final_paths):
