@@ -26,6 +26,7 @@ const copyPathBtn = document.querySelector("#copyPathBtn");
 const localFileName = document.querySelector("#localFileName");
 const settingsNavBtn = document.querySelector("#settingsNavBtn");
 const advancedSettings = document.querySelector("#advancedSettings");
+const taskSection = document.querySelector(".task-section");
 const log = document.querySelector("#log");
 const bilibiliAuthPanel = document.querySelector("#bilibiliAuthPanel");
 const bilibiliAuthStatus = document.querySelector("#bilibiliAuthStatus");
@@ -39,6 +40,17 @@ let saveOutputDirTimer = null;
 let lastLinkDefaultsKey = "";
 let currentJobId = null;
 let bilibiliAuthPollTimer = null;
+let renderedState = "idle";
+let renderedPlatform = "waiting";
+
+const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+
+function playMotion(element, keyframes, options) {
+  if (reducedMotion.matches || typeof element.animate !== "function") {
+    return;
+  }
+  element.animate(keyframes, options);
+}
 
 const stateLabels = {
   queued: "排队中",
@@ -88,10 +100,34 @@ function setBusy(isBusy) {
 }
 
 function setState(state) {
+  const changed = state !== renderedState;
   jobState.className = `state ${state}`;
   const dot = document.createElement("span");
   dot.className = "state-dot";
   jobState.replaceChildren(dot, document.createTextNode(stateLabels[state] || state));
+  taskSection.dataset.state = state;
+  if (changed) {
+    playMotion(
+      jobState,
+      [
+        { opacity: 0.35, transform: "translateY(-3px) scale(0.97)" },
+        { opacity: 1, transform: "translateY(0) scale(1)" },
+      ],
+      { duration: 170, easing: "cubic-bezier(0.23, 1, 0.32, 1)" },
+    );
+    if (state === "completed" || state === "error") {
+      playMotion(
+        taskSection,
+        [
+          { transform: "scale(0.992)" },
+          { transform: "scale(1.006)" },
+          { transform: "scale(1)" },
+        ],
+        { duration: 280, easing: "cubic-bezier(0.23, 1, 0.32, 1)" },
+      );
+    }
+    renderedState = state;
+  }
 }
 
 function updateProgress(value) {
@@ -108,12 +144,24 @@ function setSavedFile(value) {
 }
 
 function renderDetectedPlatform(platform) {
+  const changed = platform !== renderedPlatform;
   const isWaiting = platform === "waiting";
   detectedPlatform.className = `detected-platform ${platform}`;
   const dot = document.createElement("span");
   dot.className = "detected-dot";
   const label = isWaiting ? "等待链接" : `已识别 · ${platformLabels[platform] || "通用链接"}`;
   detectedPlatform.replaceChildren(dot, document.createTextNode(label));
+  if (changed) {
+    playMotion(
+      detectedPlatform,
+      [
+        { opacity: 0.3, transform: "translateY(-3px)" },
+        { opacity: 1, transform: "translateY(0)" },
+      ],
+      { duration: 170, easing: "cubic-bezier(0.23, 1, 0.32, 1)" },
+    );
+    renderedPlatform = platform;
+  }
 }
 
 function showBilibiliAuthPanel() {
@@ -504,6 +552,15 @@ cancelBtn.addEventListener("click", cancelDownload);
 settingsNavBtn.addEventListener("click", () => {
   advancedSettings.open = true;
   advancedSettings.scrollIntoView({ block: "center" });
+  playMotion(
+    advancedSettings,
+    [
+      { transform: "scale(0.995)" },
+      { transform: "scale(1.004)" },
+      { transform: "scale(1)" },
+    ],
+    { duration: 220, easing: "cubic-bezier(0.23, 1, 0.32, 1)" },
+  );
 });
 pasteBtn.addEventListener("click", async () => {
   try {
@@ -513,6 +570,15 @@ pasteBtn.addEventListener("click", async () => {
       applyLinkDefaults();
       urlInput.focus();
       pasteBtn.textContent = "已粘贴";
+      playMotion(
+        pasteBtn,
+        [
+          { transform: "scale(0.96)" },
+          { transform: "scale(1.04)" },
+          { transform: "scale(1)" },
+        ],
+        { duration: 220, easing: "cubic-bezier(0.23, 1, 0.32, 1)" },
+      );
       window.setTimeout(() => { pasteBtn.textContent = "粘贴"; }, 1200);
     }
   } catch {
@@ -525,6 +591,15 @@ copyPathBtn.addEventListener("click", async () => {
     await navigator.clipboard.writeText(savedFile.textContent);
     const label = copyPathBtn.querySelector("span");
     label.textContent = "已复制";
+    playMotion(
+      copyPathBtn,
+      [
+        { transform: "scale(0.96)" },
+        { transform: "scale(1.04)" },
+        { transform: "scale(1)" },
+      ],
+      { duration: 220, easing: "cubic-bezier(0.23, 1, 0.32, 1)" },
+    );
     window.setTimeout(() => { label.textContent = "复制路径"; }, 1600);
   } catch {
     message.textContent = "无法自动复制，请手动选择上方路径。";
@@ -560,3 +635,4 @@ loadHealth().catch((error) => {
 });
 showBilibiliAuthPanel();
 renderDetectedPlatform("waiting");
+taskSection.dataset.state = "idle";

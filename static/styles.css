@@ -3,28 +3,28 @@
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
   font-size: 16px;
   font-synthesis: none;
-  color: #242321;
-  background: #e9e8e4;
-  --window: #fbfbfa;
-  --sidebar: #f0efec;
-  --surface: #ffffff;
-  --surface-subtle: #f5f4f1;
-  --ink: #242321;
-  --secondary: #686560;
-  --muted: #96928b;
-  --border: #dedcd6;
-  --border-strong: #cecbc4;
-  --accent: #dd593b;
-  --accent-hover: #c94b30;
-  --accent-soft: #f8e6e0;
-  --green: #557c65;
-  --green-soft: #e5ede8;
-  --yellow: #9b682c;
-  --yellow-soft: #f6ead8;
-  --red: #ad473e;
-  --red-soft: #f7e5e2;
+  color: #382f28;
+  background: #e8ddd0;
+  --window: #fffaf3;
+  --sidebar: #f4eadf;
+  --surface: #fffdf9;
+  --surface-subtle: #f8f0e7;
+  --ink: #382f28;
+  --secondary: #71655a;
+  --muted: #a09488;
+  --border: rgba(91, 67, 45, 0.13);
+  --border-strong: rgba(91, 67, 45, 0.22);
+  --accent: #df6b4f;
+  --accent-hover: #ca573d;
+  --accent-soft: #fae3d8;
+  --green: #5d7f6c;
+  --green-soft: #e5eee8;
+  --yellow: #a06c32;
+  --yellow-soft: #f8ecd8;
+  --red: #ae5147;
+  --red-soft: #fae8e4;
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
-  --shadow-window: 0 24px 70px rgba(39, 35, 29, 0.13), 0 2px 8px rgba(39, 35, 29, 0.06);
+  --shadow-window: 0 30px 80px rgba(77, 55, 35, 0.16), 0 3px 12px rgba(77, 55, 35, 0.07);
 }
 
 * {
@@ -34,7 +34,7 @@
 html {
   min-width: 760px;
   min-height: 100%;
-  background: #e9e8e4;
+  background: #e8ddd0;
 }
 
 body {
@@ -42,7 +42,10 @@ body {
   margin: 0;
   padding: 24px;
   overflow: hidden;
-  background: #e9e8e4;
+  background:
+    radial-gradient(circle at 12% 8%, rgba(255, 248, 235, 0.92), transparent 30rem),
+    radial-gradient(circle at 88% 90%, rgba(195, 211, 198, 0.38), transparent 28rem),
+    #e8ddd0;
 }
 
 button,
@@ -78,10 +81,20 @@ svg {
   display: grid;
   grid-template-columns: 210px minmax(0, 1fr);
   overflow: hidden;
-  border: 1px solid #d2d0ca;
-  border-radius: 14px;
+  border: 1px solid rgba(106, 77, 49, 0.18);
+  border-radius: 18px;
   background: var(--window);
   box-shadow: var(--shadow-window);
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  transition: opacity 280ms var(--ease-out), transform 280ms var(--ease-out);
+}
+
+@starting-style {
+  .desktop-app {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
 }
 
 .sidebar {
@@ -90,7 +103,9 @@ svg {
   min-width: 0;
   border-right: 1px solid var(--border);
   padding: 24px 16px 18px;
-  background: var(--sidebar);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.18), transparent 38%),
+    var(--sidebar);
 }
 
 .brand {
@@ -107,9 +122,10 @@ svg {
   place-items: center;
   width: 32px;
   height: 32px;
-  border-radius: 9px;
+  border-radius: 10px;
   color: #fff;
-  background: var(--ink);
+  background: var(--accent);
+  box-shadow: 0 6px 14px rgba(202, 87, 61, 0.2);
 }
 
 .brand-icon svg,
@@ -156,7 +172,7 @@ svg {
   display: flex;
   align-items: center;
   gap: 9px;
-  border-radius: 8px;
+  border-radius: 9px;
   padding: 8px 10px;
   color: var(--secondary);
   background: transparent;
@@ -165,6 +181,13 @@ svg {
   text-align: left;
   text-decoration: none;
   cursor: pointer;
+  transform: scale(1);
+  transition: transform 140ms var(--ease-out);
+}
+
+.nav-item:active {
+  transform: scale(0.97);
+  transition-duration: 100ms;
 }
 
 .nav-item svg {
@@ -175,7 +198,7 @@ svg {
 
 .nav-item.active {
   color: var(--ink);
-  background: #dfddd8;
+  background: rgba(223, 107, 79, 0.12);
 }
 
 .nav-item.active svg {
@@ -184,8 +207,10 @@ svg {
 
 .sidebar-note {
   margin: auto 4px 20px;
-  border-top: 1px solid var(--border);
-  padding-top: 16px;
+  border: 1px solid rgba(119, 91, 64, 0.11);
+  border-radius: 10px;
+  padding: 12px;
+  background: rgba(255, 253, 249, 0.38);
 }
 
 .sidebar-note strong {
@@ -243,7 +268,9 @@ svg {
   min-width: 0;
   overflow-y: auto;
   padding: 34px clamp(34px, 5vw, 68px) 44px;
-  background: var(--window);
+  background:
+    radial-gradient(circle at 90% 2%, rgba(241, 196, 171, 0.12), transparent 20rem),
+    var(--window);
   scrollbar-color: #c8c5bf transparent;
   scrollbar-width: thin;
 }
@@ -288,7 +315,7 @@ h2 {
 }
 
 h1 {
-  font-size: 25px;
+  font-size: 27px;
   font-weight: 680;
   line-height: 1.2;
   letter-spacing: -0.035em;
@@ -316,7 +343,7 @@ h1 {
   border: 1px solid var(--border);
   padding: 4px 9px;
   color: var(--green);
-  background: var(--surface);
+  background: rgba(255, 253, 249, 0.82);
   font-size: 10px;
   font-weight: 650;
 }
@@ -361,9 +388,10 @@ h1 {
   min-height: 54px;
   margin-top: 8px;
   border: 1px solid var(--border-strong);
-  border-radius: 10px;
+  border-radius: 12px;
   padding: 5px 6px 5px 14px;
   background: var(--surface);
+  box-shadow: 0 3px 12px rgba(92, 67, 43, 0.045);
 }
 
 .url-input-wrap:focus-within {
@@ -403,7 +431,7 @@ h1 {
 .text-button {
   min-width: 54px;
   min-height: 40px;
-  border-radius: 7px;
+  border-radius: 9px;
   padding: 0 11px;
   color: var(--secondary);
   background: var(--surface-subtle);
@@ -457,7 +485,7 @@ select,
   min-height: 42px;
   appearance: none;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 10px;
   padding: 9px 36px 9px 11px;
   outline: 0;
   color: var(--ink);
@@ -491,7 +519,7 @@ select:focus,
   justify-content: center;
   gap: 7px;
   min-height: 40px;
-  border-radius: 8px;
+  border-radius: 10px;
   padding: 8px 14px;
   font-size: 11px;
   font-weight: 680;
@@ -502,12 +530,40 @@ select:focus,
   min-width: 128px;
   color: #fff;
   background: var(--accent);
-  box-shadow: 0 5px 12px rgba(201, 75, 48, 0.18);
+  box-shadow: 0 7px 16px rgba(202, 87, 61, 0.22);
 }
 
 .primary-button svg {
   width: 15px;
   height: 15px;
+  transition: transform 140ms var(--ease-out);
+}
+
+.primary-button:active:not(:disabled) svg {
+  transform: translateY(2px);
+}
+
+#downloadBtn::before {
+  display: none;
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid rgba(255, 255, 255, 0.45);
+  border-top-color: #fff;
+  border-radius: 50%;
+  content: "";
+}
+
+.is-busy #downloadBtn::before {
+  display: block;
+  animation: button-spin 650ms linear infinite;
+}
+
+.is-busy #downloadBtn svg {
+  display: none;
+}
+
+@keyframes button-spin {
+  to { transform: rotate(360deg); }
 }
 
 .secondary-button {
@@ -576,6 +632,22 @@ button:disabled {
 
 .advanced-content {
   padding: 2px 0 18px;
+}
+
+.advanced-settings[open] .advanced-content {
+  animation: reveal-settings 190ms var(--ease-out) both;
+  transform-origin: top center;
+}
+
+@keyframes reveal-settings {
+  from {
+    opacity: 0;
+    transform: translateY(-5px) scale(0.995);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .settings-grid {
@@ -651,9 +723,22 @@ button:disabled {
 .task-section {
   margin-top: 32px;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 12px;
   padding: 18px;
-  background: var(--surface-subtle);
+  background:
+    linear-gradient(135deg, rgba(255, 253, 249, 0.58), transparent 55%),
+    var(--surface-subtle);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+.task-section[data-state="completed"] {
+  border-color: rgba(93, 127, 108, 0.3);
+  background: var(--green-soft);
+}
+
+.task-section[data-state="error"] {
+  border-color: rgba(174, 81, 71, 0.25);
+  background: var(--red-soft);
 }
 
 .task-header {
@@ -859,7 +944,7 @@ button:disabled {
   min-width: 0;
   min-height: 42px;
   border: 1px dashed var(--border-strong);
-  border-radius: 8px;
+  border-radius: 10px;
   padding: 8px 11px;
   color: var(--secondary);
   background: var(--surface);
@@ -965,6 +1050,7 @@ button:disabled {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .desktop-app,
   .pressable,
   .chevron,
   #progressBar {
@@ -976,7 +1062,9 @@ button:disabled {
   }
 
   .state.running .state-dot,
-  .state.probing .state-dot {
+  .state.probing .state-dot,
+  .advanced-settings[open] .advanced-content,
+  .is-busy #downloadBtn::before {
     animation: none;
   }
 }
