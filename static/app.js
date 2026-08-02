@@ -11,6 +11,7 @@ const cancelBtn = document.querySelector("#cancelBtn");
 const localVideoInput = document.querySelector("#localVideoInput");
 const localCompressionTarget = document.querySelector("#localCompressionTarget");
 const compressLocalBtn = document.querySelector("#compressLocalBtn");
+const systemLabel = document.querySelector("#systemLabel");
 const envBadge = document.querySelector("#envBadge");
 const jobState = document.querySelector("#jobState");
 const progressTrack = document.querySelector("#progressTrack");
@@ -93,23 +94,23 @@ function setState(state) {
 
 function updateProgress(value) {
   const progress = Math.max(0, Math.min(100, Number(value) || 0));
-  progressBar.style.width = `${progress}%`;
+  progressBar.style.transform = `scaleX(${progress / 100})`;
   progressValue.textContent = `${Math.round(progress)}%`;
   progressTrack.setAttribute("aria-valuenow", String(Math.round(progress)));
 }
 
 function setSavedFile(value) {
   const normalized = value && value !== "-" ? value : "";
-  savedFile.textContent = normalized || "任务完成后会显示在这里";
+  savedFile.textContent = normalized || "完成后会显示文件路径";
   copyPathBtn.hidden = !normalized;
 }
 
 function renderDetectedPlatform(platform) {
   const isWaiting = platform === "waiting";
-  detectedPlatform.className = `platform-status ${platform}`;
+  detectedPlatform.className = `detected-platform ${platform}`;
   const dot = document.createElement("span");
-  dot.className = "platform-status-dot";
-  const label = isWaiting ? "等待粘贴链接" : `已识别为 ${platformLabels[platform] || "通用链接"}`;
+  dot.className = "detected-dot";
+  const label = isWaiting ? "等待链接" : `已识别 · ${platformLabels[platform] || "通用链接"}`;
   detectedPlatform.replaceChildren(dot, document.createTextNode(label));
 }
 
@@ -313,14 +314,15 @@ function requestPayload() {
 async function loadHealth() {
   const response = await fetch("/api/health");
   const data = await response.json();
+  systemLabel.textContent = `${data.platform || "本机"} · 本机服务`;
   outputDir.value = data.default_output_dir || "";
   renderBilibiliAuth(data.bilibili_auth || { authenticated: false });
   if (data.ffmpeg_available) {
     envBadge.textContent = "ffmpeg 已就绪";
-    envBadge.className = "badge";
+    envBadge.className = "env-badge";
   } else {
     envBadge.textContent = "缺少 ffmpeg";
-    envBadge.className = "badge warn";
+    envBadge.className = "env-badge warn";
     writeLog(`缺少 ffmpeg/ffprobe，高清下载和格式转换需要先安装。${data.dependency_install_hint || ""}`);
   }
   if (!data.youtube_ejs_available) {
@@ -504,6 +506,8 @@ pasteBtn.addEventListener("click", async () => {
       urlInput.value = clipboardText;
       applyLinkDefaults();
       urlInput.focus();
+      pasteBtn.textContent = "已粘贴";
+      window.setTimeout(() => { pasteBtn.textContent = "粘贴"; }, 1200);
     }
   } catch {
     urlInput.focus();
@@ -513,8 +517,9 @@ pasteBtn.addEventListener("click", async () => {
 copyPathBtn.addEventListener("click", async () => {
   try {
     await navigator.clipboard.writeText(savedFile.textContent);
-    copyPathBtn.textContent = "已复制";
-    window.setTimeout(() => { copyPathBtn.textContent = "复制路径"; }, 1600);
+    const label = copyPathBtn.querySelector("span");
+    label.textContent = "已复制";
+    window.setTimeout(() => { label.textContent = "复制路径"; }, 1600);
   } catch {
     message.textContent = "无法自动复制，请手动选择上方路径。";
   }
@@ -544,7 +549,7 @@ outputDir.addEventListener("input", () => {
 });
 loadHealth().catch((error) => {
   envBadge.textContent = "服务异常";
-  envBadge.className = "badge warn";
+  envBadge.className = "env-badge warn";
   writeLog(error.message);
 });
 showBilibiliAuthPanel();
