@@ -1,6 +1,6 @@
 # MyTools Video Downloader
 
-一个运行在本机的中文视频下载与压缩工具。它提供简单的网页界面，支持粘贴视频链接或整段分享文案，能够下载单个视频、播放列表和 B 站多 P/合集，并将结果转换成 Windows 与 macOS 都容易播放的 MP4 文件。
+一个面向 Windows 10/11 与 macOS 的本地视频下载与压缩工具。它提供清晰的中文网页界面，支持粘贴视频链接或整段分享文案，能够下载单个视频、播放列表和 B 站多 P/合集，并将结果转换成两个系统都容易播放的 MP4 文件。
 
 目前重点适配：
 
@@ -46,17 +46,6 @@ chmod +x run.sh
 ./run.sh
 ```
 
-### Linux
-
-使用系统包管理器安装 Python 3.10+、ffmpeg、ffprobe 和 Node.js 22+，然后执行：
-
-```bash
-git clone https://github.com/SingerNeil/mytools-video-downloader.git
-cd mytools-video-downloader
-chmod +x run.sh
-./run.sh
-```
-
 启动脚本会自动创建 `.venv`、安装或更新 Python 依赖，并在本机启动服务。看到下面的地址后，用浏览器打开它：
 
 ```text
@@ -91,6 +80,8 @@ B 站的 1080P 高码率、4K、8K、HDR、杜比等画质是否可用，取决�
 
 ## 基本使用
 
+主页面分为视频下载、任务状态和本地视频压缩三个区域，下载过程与文件保存位置会直接显示在页面中。
+
 1. 粘贴视频网址或带网址的分享文案。
 2. 工具会自动提取第一个有效链接并识别平台。
 3. 选择登录状态、下载范围、画质、上传压缩大小和保存位置。
@@ -117,14 +108,14 @@ B 站的 1080P 高码率、4K、8K、HDR、杜比等画质是否可用，取决�
 高画质网站通常将视频流和音频流分开提供。工具会自动下载、合并，并在需要时转换为 H.264/AAC MP4：
 
 - macOS 优先尝试 VideoToolbox 硬件编码，失败后回退到 `libx264`；
-- Windows 和 Linux 默认使用兼容性稳定的 `libx264`；
+- Windows 默认使用兼容性稳定的 `libx264`；
 - 高分辨率或长视频的合并与转码可能明显慢于下载过程。
 
 ### 抖音与小红书
 
 可以直接粘贴分享文案，无需手动提取其中的短链接。抖音 `/user/self?modal_id=...` 链接会自动转换为对应的视频地址。
 
-Windows 下载抖音时会优先使用一个隔离的 Microsoft Edge 无头页面，让抖音网页自行完成当前接口所需的签名，再把页面返回的视频格式交给下载引擎。这个流程不会读取正在运行的 Chrome Cookie 数据库，因此 Chrome 无需退出，也不要求安装 Firefox。macOS/Linux 会先尝试常规解析，失败后再使用本机 Chrome 或 Edge 执行同样的页面回退。
+Windows 下载抖音时会优先使用一个隔离的 Microsoft Edge 无头页面，让抖音网页自行完成当前接口所需的签名，再把页面返回的视频格式交给下载引擎。这个流程不会读取正在运行的 Chrome Cookie 数据库，因此 Chrome 无需退出，也不要求安装 Firefox。macOS 会先尝试常规解析，失败后再使用本机 Chrome 或 Edge 执行同样的页面回退。
 
 公开内容选择“不使用登录状态”即可。`/user/self?...&modal_id=...` 这类从“我的喜欢”页面复制的链接，只要对应视频本身可公开访问，也可以直接下载。私密、仅登录账号可见或需要人工验证码的内容仍可能无法自动处理。
 
@@ -150,7 +141,6 @@ Windows 下载抖音时会优先使用一个隔离的 Microsoft Edge 无头页�
 ```text
 Windows: C:\Users\<用户名>\Downloads\MyToolsVideos
 macOS:   /Users/<用户名>/Downloads/MyToolsVideos
-Linux:   /home/<用户名>/Downloads/MyToolsVideos
 ```
 
 在页面中修改保存位置后，工具会在项目根目录创建 `user_settings.json`。该文件只记录本机下载目录，已经被 `.gitignore` 排除，不会提交到 Git。
@@ -159,7 +149,7 @@ Windows 文件名中的保留字符及 `CON`、`NUL`、`LPT1` 等系统保留名
 
 ## 启动脚本做了什么
 
-Windows 的 `run.bat` 会调用 `run.ps1`；macOS/Linux 使用 `run.sh`。脚本会：
+Windows 的 `run.bat` 会调用 `run.ps1`；macOS 使用 `run.sh`。脚本会：
 
 1. 检查 Python 版本是否至少为 3.10；
 2. 创建或复用当前系统的 `.venv`；
@@ -176,7 +166,7 @@ $env:PYTHON_BIN = "C:\Path\To\Python312\python.exe"
 .\run.bat
 ```
 
-macOS/Linux：
+macOS：
 
 ```bash
 PYTHON_BIN=/path/to/python3.12 ./run.sh
@@ -257,7 +247,7 @@ YouTube 的页面解析规则变化较快，也应确保启动时安装到了最
 
 ### Windows 提示现有 `.venv` 不是有效环境
 
-`.venv` 不能在 Windows 与 macOS/Linux 之间共用。删除项目中的 `.venv` 后，在当前系统重新运行启动脚本即可创建新的环境。不要把 `.venv` 提交到 Git 或放进发布压缩包。
+`.venv` 不能在 Windows 与 macOS 之间共用。删除项目中的 `.venv` 后，在当前系统重新运行启动脚本即可创建新的环境。不要把 `.venv` 提交到 Git 或放进发布压缩包。
 
 ## 开发与测试
 
@@ -268,7 +258,7 @@ app/                  FastAPI 接口、下载任务、B 站登录和设置
 static/               本地网页界面
 tests/                自动化测试
 run.bat / run.ps1     Windows 启动入口
-run.sh                macOS/Linux 启动入口
+run.sh                macOS 启动入口
 requirements.txt      Python 依赖
 ```
 
@@ -281,7 +271,7 @@ Windows：
 node --check static\app.js
 ```
 
-macOS/Linux：
+macOS：
 
 ```bash
 .venv/bin/python -m unittest discover -s tests -v
