@@ -11,7 +11,6 @@ const cancelBtn = document.querySelector("#cancelBtn");
 const localVideoInput = document.querySelector("#localVideoInput");
 const localCompressionTarget = document.querySelector("#localCompressionTarget");
 const compressLocalBtn = document.querySelector("#compressLocalBtn");
-const systemLabel = document.querySelector("#systemLabel");
 const envBadge = document.querySelector("#envBadge");
 const jobState = document.querySelector("#jobState");
 const progressTrack = document.querySelector("#progressTrack");
@@ -24,9 +23,6 @@ const detectedPlatform = document.querySelector("#detectedPlatform");
 const pasteBtn = document.querySelector("#pasteBtn");
 const copyPathBtn = document.querySelector("#copyPathBtn");
 const localFileName = document.querySelector("#localFileName");
-const settingsNavBtn = document.querySelector("#settingsNavBtn");
-const advancedSettings = document.querySelector("#advancedSettings");
-const taskSection = document.querySelector(".task-section");
 const log = document.querySelector("#log");
 const bilibiliAuthPanel = document.querySelector("#bilibiliAuthPanel");
 const bilibiliAuthStatus = document.querySelector("#bilibiliAuthStatus");
@@ -40,17 +36,6 @@ let saveOutputDirTimer = null;
 let lastLinkDefaultsKey = "";
 let currentJobId = null;
 let bilibiliAuthPollTimer = null;
-let renderedState = "idle";
-let renderedPlatform = "waiting";
-
-const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
-
-function playMotion(element, keyframes, options) {
-  if (reducedMotion.matches || typeof element.animate !== "function") {
-    return;
-  }
-  element.animate(keyframes, options);
-}
 
 const stateLabels = {
   queued: "排队中",
@@ -100,68 +85,32 @@ function setBusy(isBusy) {
 }
 
 function setState(state) {
-  const changed = state !== renderedState;
   jobState.className = `state ${state}`;
   const dot = document.createElement("span");
   dot.className = "state-dot";
   jobState.replaceChildren(dot, document.createTextNode(stateLabels[state] || state));
-  taskSection.dataset.state = state;
-  if (changed) {
-    playMotion(
-      jobState,
-      [
-        { opacity: 0.35, transform: "translateY(-3px) scale(0.97)" },
-        { opacity: 1, transform: "translateY(0) scale(1)" },
-      ],
-      { duration: 170, easing: "cubic-bezier(0.23, 1, 0.32, 1)" },
-    );
-    if (state === "completed" || state === "error") {
-      playMotion(
-        taskSection,
-        [
-          { transform: "scale(0.992)" },
-          { transform: "scale(1.006)" },
-          { transform: "scale(1)" },
-        ],
-        { duration: 280, easing: "cubic-bezier(0.23, 1, 0.32, 1)" },
-      );
-    }
-    renderedState = state;
-  }
 }
 
 function updateProgress(value) {
   const progress = Math.max(0, Math.min(100, Number(value) || 0));
-  progressBar.style.transform = `scaleX(${progress / 100})`;
+  progressBar.style.width = `${progress}%`;
   progressValue.textContent = `${Math.round(progress)}%`;
   progressTrack.setAttribute("aria-valuenow", String(Math.round(progress)));
 }
 
 function setSavedFile(value) {
   const normalized = value && value !== "-" ? value : "";
-  savedFile.textContent = normalized || "完成后会显示文件路径";
+  savedFile.textContent = normalized || "任务完成后会显示在这里";
   copyPathBtn.hidden = !normalized;
 }
 
 function renderDetectedPlatform(platform) {
-  const changed = platform !== renderedPlatform;
   const isWaiting = platform === "waiting";
-  detectedPlatform.className = `detected-platform ${platform}`;
+  detectedPlatform.className = `platform-status ${platform}`;
   const dot = document.createElement("span");
-  dot.className = "detected-dot";
-  const label = isWaiting ? "等待链接" : `已识别 · ${platformLabels[platform] || "通用链接"}`;
+  dot.className = "platform-status-dot";
+  const label = isWaiting ? "等待粘贴链接" : `已识别为 ${platformLabels[platform] || "通用链接"}`;
   detectedPlatform.replaceChildren(dot, document.createTextNode(label));
-  if (changed) {
-    playMotion(
-      detectedPlatform,
-      [
-        { opacity: 0.3, transform: "translateY(-3px)" },
-        { opacity: 1, transform: "translateY(0)" },
-      ],
-      { duration: 170, easing: "cubic-bezier(0.23, 1, 0.32, 1)" },
-    );
-    renderedPlatform = platform;
-  }
 }
 
 function showBilibiliAuthPanel() {
@@ -364,15 +313,14 @@ function requestPayload() {
 async function loadHealth() {
   const response = await fetch("/api/health");
   const data = await response.json();
-  systemLabel.textContent = `${data.platform || "本机"} · 本机服务`;
   outputDir.value = data.default_output_dir || "";
   renderBilibiliAuth(data.bilibili_auth || { authenticated: false });
   if (data.ffmpeg_available) {
     envBadge.textContent = "ffmpeg 已就绪";
-    envBadge.className = "env-badge";
+    envBadge.className = "badge";
   } else {
     envBadge.textContent = "缺少 ffmpeg";
-    envBadge.className = "env-badge warn";
+    envBadge.className = "badge warn";
     writeLog(`缺少 ffmpeg/ffprobe，高清下载和格式转换需要先安装。${data.dependency_install_hint || ""}`);
   }
   if (!data.youtube_ejs_available) {
@@ -549,19 +497,6 @@ probeBtn.addEventListener("click", probe);
 downloadBtn.addEventListener("click", startDownload);
 compressLocalBtn.addEventListener("click", startLocalCompression);
 cancelBtn.addEventListener("click", cancelDownload);
-settingsNavBtn.addEventListener("click", () => {
-  advancedSettings.open = true;
-  advancedSettings.scrollIntoView({ block: "center" });
-  playMotion(
-    advancedSettings,
-    [
-      { transform: "scale(0.995)" },
-      { transform: "scale(1.004)" },
-      { transform: "scale(1)" },
-    ],
-    { duration: 220, easing: "cubic-bezier(0.23, 1, 0.32, 1)" },
-  );
-});
 pasteBtn.addEventListener("click", async () => {
   try {
     const clipboardText = await navigator.clipboard.readText();
@@ -569,17 +504,6 @@ pasteBtn.addEventListener("click", async () => {
       urlInput.value = clipboardText;
       applyLinkDefaults();
       urlInput.focus();
-      pasteBtn.textContent = "已粘贴";
-      playMotion(
-        pasteBtn,
-        [
-          { transform: "scale(0.96)" },
-          { transform: "scale(1.04)" },
-          { transform: "scale(1)" },
-        ],
-        { duration: 220, easing: "cubic-bezier(0.23, 1, 0.32, 1)" },
-      );
-      window.setTimeout(() => { pasteBtn.textContent = "粘贴"; }, 1200);
     }
   } catch {
     urlInput.focus();
@@ -589,18 +513,8 @@ pasteBtn.addEventListener("click", async () => {
 copyPathBtn.addEventListener("click", async () => {
   try {
     await navigator.clipboard.writeText(savedFile.textContent);
-    const label = copyPathBtn.querySelector("span");
-    label.textContent = "已复制";
-    playMotion(
-      copyPathBtn,
-      [
-        { transform: "scale(0.96)" },
-        { transform: "scale(1.04)" },
-        { transform: "scale(1)" },
-      ],
-      { duration: 220, easing: "cubic-bezier(0.23, 1, 0.32, 1)" },
-    );
-    window.setTimeout(() => { label.textContent = "复制路径"; }, 1600);
+    copyPathBtn.textContent = "已复制";
+    window.setTimeout(() => { copyPathBtn.textContent = "复制路径"; }, 1600);
   } catch {
     message.textContent = "无法自动复制，请手动选择上方路径。";
   }
@@ -630,9 +544,8 @@ outputDir.addEventListener("input", () => {
 });
 loadHealth().catch((error) => {
   envBadge.textContent = "服务异常";
-  envBadge.className = "env-badge warn";
+  envBadge.className = "badge warn";
   writeLog(error.message);
 });
 showBilibiliAuthPanel();
 renderDetectedPlatform("waiting");
-taskSection.dataset.state = "idle";
