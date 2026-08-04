@@ -12,6 +12,13 @@ const localVideoInput = document.querySelector("#localVideoInput");
 const localCompressionTarget = document.querySelector("#localCompressionTarget");
 const compressLocalBtn = document.querySelector("#compressLocalBtn");
 const envBadge = document.querySelector("#envBadge");
+const localUrl = document.querySelector("#localUrl");
+const shutdownBtn = document.querySelector("#shutdownBtn");
+const openLogBtn = document.querySelector("#openLogBtn");
+const closeLogBtn = document.querySelector("#closeLogBtn");
+const clearLogBtn = document.querySelector("#clearLogBtn");
+const copyLogBtn = document.querySelector("#copyLogBtn");
+const logOverlay = document.querySelector("#logOverlay");
 const jobState = document.querySelector("#jobState");
 const progressTrack = document.querySelector("#progressTrack");
 const progressBar = document.querySelector("#progressBar");
@@ -36,6 +43,10 @@ let saveOutputDirTimer = null;
 let lastLinkDefaultsKey = "";
 let currentJobId = null;
 let bilibiliAuthPollTimer = null;
+let lastLoggedStatus = "";
+let lastLoggedProgressBucket = -1;
+let shutdownArmed = false;
+let shutdownDisarmTimer = null;
 
 const stateLabels = {
   queued: "排队中",
@@ -68,10 +79,34 @@ const platformLabels = {
   douyin: "抖音",
 };
 
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
 function writeLog(line) {
   const time = new Date().toLocaleTimeString();
-  log.textContent = `${log.textContent}[${time}] ${line}\n`;
+  log.insertAdjacentHTML(
+    "beforeend",
+    `<span class="log-time">[${time}]</span> ${escapeHtml(line)}\n`,
+  );
   log.scrollTop = log.scrollHeight;
+  if (logOverlay.hidden) {
+    openLogBtn.classList.add("has-new");
+  }
+}
+
+function openLogOverlay() {
+  logOverlay.hidden = false;
+  openLogBtn.classList.remove("has-new");
+  log.scrollTop = log.scrollHeight;
+}
+
+function closeLogOverlay() {
+  logOverlay.hidden = true;
 }
 
 function setBusy(isBusy) {
@@ -374,6 +409,8 @@ async function startDownload() {
     const job = await api("/api/download", payload);
     currentJobId = job.id;
     setBusy(true);
+    lastLoggedStatus = "";
+    lastLoggedProgressBucket = -1;
     writeLog(`下载任务已创建：${job.id}`);
     pollJob(job.id);
   } catch (error) {
@@ -415,6 +452,8 @@ async function startLocalCompression() {
     }
     currentJobId = job.id;
     setBusy(true);
+    lastLoggedStatus = "";
+    lastLoggedProgressBucket = -1;
     writeLog(`本地视频压缩任务已创建：${job.id}`);
     pollJob(job.id);
   } catch (error) {
@@ -455,7 +494,19 @@ async function pollJob(jobId) {
 
     setState(job.status);
     updateProgress(job.progress);
-    message.textContent = job.error || messageLabels[job.message] || stateLabels[job.status] || job.message || job.status;
+    const statusText = job.error || messageLabels[job.message] || stateLabels[job.status] || job.message || job.status;
+    message.textContent = statusText;
+    if (job.message && job.message !== lastLoggedStatus) {
+      writeLog(`状态：${messageLabels[job.message] || job.message}`);
+      lastLoggedStatus = job.message;
+    }
+    if (job.status === "running" && Number.isFinite(job.progress)) {
+      const bucket = Math.floor(job.progress / 10);
+      if (bucket > lastLoggedProgressBucket) {
+        writeLog(`进度：${Math.round(job.progress)}%`);
+        lastLoggedProgressBucket = bucket;
+      }
+    }
     title.textContent = job.title || title.textContent || "-";
     const outputValue = Array.isArray(job.output_paths) && job.output_paths.length > 1
       ? job.output_paths.join("\n")
@@ -465,6 +516,8 @@ async function pollJob(jobId) {
     if (job.status === "completed") {
       const countText = Array.isArray(job.output_paths) && job.output_paths.length > 1 ? `，共 ${job.output_paths.length} 个文件` : "";
       writeLog(`任务完成${countText}：${job.output_path || "文件已保存"}`);
+      lastLoggedStatus = "";
+      lastLoggedProgressBucket = -1;
       currentJobId = null;
       setBusy(false);
       return;
@@ -472,6 +525,8 @@ async function pollJob(jobId) {
 
     if (job.status === "error") {
       writeLog(`下载失败：${job.error || "未知错误"}`);
+      lastLoggedStatus = "";
+      lastLoggedProgressBucket = -1;
       currentJobId = null;
       setBusy(false);
       return;
@@ -479,6 +534,8 @@ async function pollJob(jobId) {
 
     if (job.status === "canceled") {
       writeLog("任务已停止。");
+      lastLoggedStatus = "";
+      lastLoggedProgressBucket = -1;
       currentJobId = null;
       setBusy(false);
       return;
@@ -519,6 +576,49 @@ copyPathBtn.addEventListener("click", async () => {
     message.textContent = "无法自动复制，请手动选择上方路径。";
   }
 });
+openLogBtn.addEventListener("click", openLogOverlay);
+closeLogBtn.addEventListener("click", closeLogOverlay);
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !logOverlay.hidden) {
+    closeLogOverlay();
+  }
+});
+clearLogBtn.addEventListener("click", () => {
+  log.textContent = "";
+  clearLogBtn.textContent = "已清空";
+  window.setTimeout(() => { clearLogBtn.textContent = "清空"; }, 1200);
+});
+copyLogBtn.addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(log.textContent);
+    copyLogBtn.textContent = "已复制";
+    window.setTimeout(() => { copyLogBtn.textContent = "复制全部"; }, 1600);
+  } catch {
+    message.textContent = "无法自动复制，请手动选择运行记录中的文本。";
+  }
+});
+shutdownBtn.addEventListener("click", async () => {
+  if (!shutdownArmed) {
+    shutdownArmed = true;
+    shutdownBtn.classList.add("armed");
+    shutdownBtn.textContent = "确认关闭？";
+    shutdownDisarmTimer = window.setTimeout(() => {
+      shutdownArmed = false;
+      shutdownBtn.classList.remove("armed");
+      shutdownBtn.textContent = "关闭服务";
+    }, 5000);
+    return;
+  }
+  window.clearTimeout(shutdownDisarmTimer);
+  writeLog("正在关闭本地服务，页面即将失效…");
+  shutdownBtn.disabled = true;
+  shutdownBtn.textContent = "已关闭";
+  try {
+    await fetch("/api/shutdown", { method: "POST" });
+  } catch {
+    // 服务可能已经退出
+  }
+});
 bilibiliLoginBtn.addEventListener("click", startBilibiliLogin);
 bilibiliLogoutBtn.addEventListener("click", () => {
   logoutBilibili().catch((error) => writeLog(error.message));
@@ -542,6 +642,9 @@ outputDir.addEventListener("input", () => {
     saveOutputDir(true).catch((error) => writeLog(`保存位置失败：${error.message}`));
   }, 800);
 });
+if (localUrl) {
+  localUrl.textContent = location.host;
+}
 loadHealth().catch((error) => {
   envBadge.textContent = "服务异常";
   envBadge.className = "badge warn";

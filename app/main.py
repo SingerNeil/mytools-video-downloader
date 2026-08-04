@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import os
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from uuid import uuid4
@@ -115,6 +118,18 @@ def bilibili_auth_logout() -> dict[str, object]:
 @app.post("/api/settings")
 def update_settings(request: SettingsRequest) -> dict[str, str]:
     return save_settings(request.output_dir)
+
+
+@app.post("/api/shutdown")
+def shutdown() -> dict[str, object]:
+    # Exit the local service after a short delay so the response can
+    # reach the page first. Running downloads will be interrupted.
+    def _exit_server() -> None:
+        time.sleep(0.6)
+        os._exit(0)
+
+    threading.Thread(target=_exit_server, daemon=True).start()
+    return {"ok": True, "message": "服务正在关闭"}
 
 
 @app.post("/api/probe")

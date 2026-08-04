@@ -288,6 +288,7 @@ node --check static/app.js
 | `GET` | `/api/bilibili/auth/qr/{qr_key}` | 查询扫码状态 |
 | `POST` | `/api/bilibili/auth/logout` | 清除内存中的 B 站登录信息 |
 | `POST` | `/api/settings` | 保存下载目录 |
+| `POST` | `/api/shutdown` | 从网页关闭本地服务 |
 | `POST` | `/api/probe` | 检测和解析链接 |
 | `POST` | `/api/download` | 创建下载任务 |
 | `POST` | `/api/compress-local` | 上传并压缩本地视频 |
@@ -297,6 +298,7 @@ node --check static/app.js
 ## 隐私与安全
 
 - 服务默认只监听 `127.0.0.1`，不会主动开放到局域网或公网。
+- 页面右上角的「关闭服务」按钮会直接结束本地进程（相当于在终端按 `Ctrl+C`），运行中的下载任务会被中断。
 - B 站扫码 Cookie 仅保存在内存中，并使用 `.bilibili.com` 域级作用域提供给下载引擎。
 - 浏览器登录模式由 `yt-dlp` 直接读取本机浏览器 Cookie，本工具不会收集用户名或密码。
 - 上传本地视频进行压缩时，临时文件保存在项目的 `.mytools_uploads` 中，任务结束后会清理。
